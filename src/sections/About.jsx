@@ -13,8 +13,9 @@ const About = () => {
         {/* Grid 1 */}
         <div className="flex items-end grid-default-color grid-1">
           <img
-            src="assets/coding-pov.png"
-            className="absolute scale-[1.75] -right-[5rem] -top-[1rem] md:scale-[3] md:left-50 md:inset-y-10 lg:scale-[2.5]"
+            // src="assets/coding-pov.png"
+            src="assets/coding_ai.jpeg"
+            className="absolute scale-[1.75] -right-[5rem] -top-[-5rem] md:scale-[4] md:left-20 md:inset-y-7 lg:scale-[1.5] bg-transparent"
           />
           <div className="z-10">
             <p className="headtext">Hi, I'm Bolaji Hammed</p>
@@ -60,18 +61,38 @@ const About = () => {
               containerRef={grid2Container}
             />
             <Card
-              style={{ rotate: "30deg", top: "70%", left: "70%" }}
-              image="assets/logos/csharp-pink.png"
+              style={{ rotate: "-30deg", top: "70%", left: "70%", borderRadius: "30%" }}
+              image="assets/logos/ansible.jpeg"
               containerRef={grid2Container}
             />
             <Card
-              style={{ rotate: "-45deg", top: "70%", left: "25%" }}
-              image="assets/logos/dotnet-pink.png"
+              style={{ rotate: "-45deg", top: "70%", left: "25%", borderRadius: "30%" }}
+              image="assets/logos/docker.jpeg"
               containerRef={grid2Container}
             />
             <Card
-              style={{ rotate: "-45deg", top: "5%", left: "10%" }}
-              image="assets/logos/blazor-pink.png"
+              style={{ rotate: "-45deg", top: "5%", left: "10%", borderRadius: "30%" }}
+              image="assets/logos/terraform.jpeg"
+              containerRef={grid2Container}
+            />
+            <Card
+              style={{ rotate: "-45deg", top: "5%", left: "50%", borderRadius: "30%", width: "59px", height: "70px" }}
+              image="assets/logos/python.jpeg"
+              containerRef={grid2Container}
+            />
+            <Card
+              style={{ rotate: "-35deg", top: "5%", right: "10%", borderRadius: "30%" }}
+              image="assets/logos/circleci.png"
+              containerRef={grid2Container}
+            />
+            <Card
+              style={{ rotate: "-75deg", bottom: "50%", right: "30%", borderRadius: "30%" }}
+              image="assets/logos/github.jpeg"
+              containerRef={grid2Container}
+            />
+            <Card
+              style={{ rotate: "-75deg", bottom: "50%", right: "50%", borderRadius: "30%" }}
+              image="assets/logos/kubernetes.jpeg"
               containerRef={grid2Container}
             />
           </div>
@@ -81,7 +102,7 @@ const About = () => {
           <div className="z-10 w-[50%]">
             <p className="headtext">Time Zone</p>
             <p className="subtext">
-              I'm based in Mars, and open to remote work worldwide
+              I'm based in Nigeria, and open to remote work worldwide
             </p>
           </div>
           <figure className="absolute left-[30%] top-[10%]">

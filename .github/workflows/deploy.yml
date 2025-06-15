@@ -45,11 +45,21 @@ jobs:
           # Build the application
           npm run build
           
-          # Test Nginx configuration
-          sudo nginx -t
+          # # Test Nginx configuration
+          # sudo nginx -t
           
-          # Reload Nginx to serve new build
-          sudo systemctl reload nginx
+          # # Reload Nginx to serve new build
+          # sudo systemctl reload nginx
+
+          # Set proper permissions
+          sudo chown -R www-data:www-data dist/
+          sudo chmod -R 755 dist/
+          
+          # Test Apache configuration
+          sudo apache2ctl configtest
+          
+          # Reload Apache to serve new build
+          sudo systemctl reload apache2
           
           echo "Deployment completed successfully!"
           echo "Node.js version: $(node -v)"

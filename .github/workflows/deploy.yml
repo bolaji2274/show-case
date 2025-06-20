@@ -2,6 +2,8 @@ name: Deploy to EC2
 
 on:
   push:
+    branches: [ main, master ]  # Adjust branch name as needed
+  pull_request:
     branches: [ main, master ]
 
 jobs:
@@ -15,11 +17,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '20'  # Match your EC2 Node.js version
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci
+      run: npm ci  # Use npm ci for faster, reliable builds
       
     - name: Build application
       run: npm run build
@@ -31,79 +33,35 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          set -e  # Exit on any error
+          # Navigate to app directory
+          cd ${{ secrets.EC2_APP_PATH }}
           
-          echo "🔍 Starting deployment debug..."
-          echo "📍 Current user: $(whoami)"
-          echo "📍 Current directory: $(pwd)"
-          echo "📍 Home directory: $HOME"
+          # Pull latest changes
+          git pull origin main
           
-          # Set up environment variables
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          
-          echo "📍 Node.js path: $(which node || echo 'Node.js not found')"
-          echo "📍 NPM path: $(which npm || echo 'NPM not found')"
-          
-          # Create app directory if it doesn't exist
-          echo "📁 Creating/checking directory: /var/www/portfolio2"
-          sudo mkdir -p /var/www/portfolio2
-          
-          # Change ownership to deploy user for git operations
-          echo "👤 Setting ownership to deploy user..."
-          sudo chown -R deploy:deploy /var/www/portfolio2
-          
-          echo "📂 Navigating to /var/www/portfolio2"
-          cd /var/www/portfolio2
-          echo "📍 Current directory: $(pwd)"
-          echo "📍 Directory contents:"
-          ls -la
-          
-          # Clone or pull the repository
-          if [ -d ".git" ]; then
-            echo "🔄 Repository exists, pulling latest changes..."
-            git pull origin main
-          else
-            echo "📥 Cloning repository..."
-            git clone https://github.com/bolaji2274/show-case.git .
-          fi
-          
-          echo "📍 After git operation, directory contents:"
-          ls -la
-          
-          # Install dependencies
-          echo "📦 Installing dependencies..."
+          # Install dependencies (use npm ci for production)
           npm ci --only=production
           
-          echo "📍 After npm install, checking package.json:"
-          [ -f "package.json" ] && echo "✅ package.json found" || echo "❌ package.json not found"
-          
           # Build the application
-          echo "🔨 Building application..."
           npm run build
           
-          echo "📍 After build, checking dist directory:"
-          [ -d "dist" ] && echo "✅ dist directory created" || echo "❌ dist directory not found"
-          [ -d "dist" ] && ls -la dist/ || echo "Cannot list dist contents"
+          # # Test Nginx configuration
+          # sudo nginx -t
           
-          # Set proper permissions for Apache
-          echo "🔐 Setting permissions for Apache..."
-          sudo chown -R www-data:www-data /var/www/portfolio2/dist/
-          sudo chmod -R 755 /var/www/portfolio2/dist/
+          # # Reload Nginx to serve new build
+          # sudo systemctl reload nginx
+
+          # Set proper permissions
+          sudo chown -R www-data:www-data dist/
+          sudo chmod -R 755 dist/
           
-          # Test and reload Apache
-          echo "🧪 Testing Apache configuration..."
+          # Test Apache configuration
           sudo apache2ctl configtest
-          if [ $? -eq 0 ]; then
-            echo "🔄 Reloading Apache..."
-            sudo systemctl reload apache2
-            echo "✅ Apache reloaded successfully!"
-          else
-            echo "❌ Apache configuration test failed!"
-            exit 1
-          fi
           
-          echo "🎉 Deployment completed successfully!"
-          echo "📦 Node.js version: $(node -v)"
-          echo "📁 Build directory contents:"
-          ls -la /var/www/portfolio2/dist/
+          # Reload Apache to serve new build
+          sudo systemctl reload apache2
+          
+          echo "Deployment completed successfully!"
+          echo "Node.js version: $(node -v)"
+          echo "Build directory contents:"
+          ls -la dist/

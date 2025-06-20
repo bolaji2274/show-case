@@ -18,7 +18,7 @@ const HeroText = () => {
           animate="visible"
           transition={{ delay: 1 }}
         >
-          Hi I'm Bolaji Hammed Adekunle
+          Hi I'm Bolaji Hammed Welcome
         </motion.h1>
         <div className="flex flex-col items-start">
           <motion.p

@@ -40,7 +40,7 @@ jobs:
           git pull origin main
           
           # Install dependencies (use npm ci for production)
-          npm ci --only=production
+          npm ci
           
           # Build the application
           npm run build

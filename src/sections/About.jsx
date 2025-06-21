@@ -14,14 +14,31 @@ const About = () => {
         
         {/* Grid 1 - Enhanced Personal Introduction */}
         <div className="flex items-end grid-default-color grid-1">
-          <img
-            src="assets/coding_ai.jpeg"
+          {/* <img
+            // src="assets/coding_ai.jpeg"
+            src="assets/coding_4.png"
             className="absolute scale-[1.75] -right-[5rem] -top-[-5rem] md:scale-[4] md:left-20 md:inset-y-7 lg:scale-[1.5] bg-transparent"
             alt="Bolaji coding"
+          /> */}
+
+           {/* Mobile Image */}
+          <img
+            src="assets/coding_4.png"
+            className="absolute md:hidden object-cover object-center w-full h-full opacity-30"
+            alt="Bolaji coding"
           />
-          <div className="z-10">
-            <p className="headtext">Hi, I'm Bolaji Hammed</p>
-            <p className="subtext">
+          
+          {/* Desktop Image */}
+          <img
+            src="assets/coding_ai.jpeg"
+            // className="hidden md:block absolute object-cover object-center scale-[1.2] right-0 top-0 w-3/5 h-full opacity-40"
+            className="absolute scale-[1.75] -right-[5rem] -top-[-5rem] md:scale-[4] md:left-20 md:inset-y-7 lg:scale-[1.5] bg-transparent"
+            alt="Bolaji coding with AI"
+          />
+          
+         <div className="relative z-10 p-4 md:p-6 bg-gradient-to-r from-black/50 via-black/60 to-transparent md:bg-none md:bg-black/20 backdrop-blur-sm md:backdrop-blur-none rounded-lg md:rounded-none">
+            <p className="headtext text-white drop-shadow-lg">Hi, I'm Bolaji Hammed</p>
+            <p className="subtext text-gray-100 md:text-gray-300 drop-shadow-md leading-relaxed">
               A passionate DevOps Engineer & Full-Stack Developer with 4+ years of experience 
               architecting scalable solutions. I bridge the gap between development and operations, 
               turning complex infrastructure challenges into automated, reliable systems.

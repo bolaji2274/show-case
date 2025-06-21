@@ -98,7 +98,7 @@ const HeroText = () => {
           
           <motion.p
             // className="mt-4 text-lg text-neutral-400 max-w-2xl"
-            className="px-4 py-2 text-sm font-medium from-blue-500/20 to-purple-500/20 rounded-full text-blue-300"
+            className="px-4 py-2 text-lg font-medium from-blue-500/20 to-purple-500/20 rounded-full text-blue-300"
             variants={fadeInUp}
             initial="hidden"
             animate="visible"

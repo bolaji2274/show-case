@@ -2,6 +2,7 @@ import { useState } from "react";
 import emailjs from "@emailjs/browser";
 import Alert from "../components/Alert";
 import { Particles } from "../components/Particles";
+
 const Contact = () => {
   const [formData, setFormData] = useState({
     name: "",
@@ -12,9 +13,11 @@ const Contact = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertType, setAlertType] = useState("success");
   const [alertMessage, setAlertMessage] = useState("");
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+
   const showAlertMessage = (type, message) => {
     setAlertType(type);
     setAlertMessage(message);
@@ -23,33 +26,35 @@ const Contact = () => {
       setShowAlert(false);
     }, 5000);
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      console.log("From submitted:", formData);
+      console.log("Form submitted:", formData);
       await emailjs.send(
-        "service_79b0nyj",
-        "template_17us8im",
+        import.meta.env.VITE_APP_EMAILJS_SERVICE_ID,
+        import.meta.env.VITE_APP_EMAILJS_TEMPLATE_ID,
         {
           from_name: formData.name,
-          to_name: "Ali",
+          to_name: "Bolaji", // Updated to your name
           from_email: formData.email,
-          to_email: "AliSanatiDev@gmail.com",
+          to_email: "hammedbolajihammed@gmail.com", // Replace with your actual email
           message: formData.message,
         },
-        "pn-Bw_mS1_QQdofuV"
+        import.meta.env.VITE_APP_EMAILJS_PUBLIC_KEY
       );
       setIsLoading(false);
       setFormData({ name: "", email: "", message: "" });
-      showAlertMessage("success", "You message has been sent!");
+      showAlertMessage("success", "Your message has been sent successfully!");
     } catch (error) {
       setIsLoading(false);
       console.log(error);
-      showAlertMessage("danger", "Somthing went wrong!");
+      showAlertMessage("danger", "Something went wrong! Please try again.");
     }
   };
+
   return (
     <section className="relative flex items-center c-space section-spacing">
       <Particles
@@ -62,10 +67,11 @@ const Contact = () => {
       {showAlert && <Alert type={alertType} text={alertMessage} />}
       <div className="flex flex-col items-center justify-center max-w-md p-5 mx-auto border border-white/10 rounded-2xl bg-primary">
         <div className="flex flex-col items-start w-full gap-5 mb-10">
-          <h2 className="text-heading">Let's Talk</h2>
+          <h2 className="text-heading">Let's Build Together</h2>
           <p className="font-normal text-neutral-400">
-            Whether you're loking to build a new website, improve your existing
-            platform, or bring a unique project to life, I'm here to help
+            Whether you're looking to scale your infrastructure, automate your deployment pipelines, 
+            build robust backend systems, or bring innovative DevOps solutions to life, I'm here to help. 
+            Let's discuss how we can optimize your technology stack and accelerate your business growth.
           </p>
         </div>
         <form className="w-full" onSubmit={handleSubmit}>
@@ -78,7 +84,7 @@ const Contact = () => {
               name="name"
               type="text"
               className="field-input field-input-focus"
-              placeholder="John Doe"
+              placeholder="John Smith"
               autoComplete="name"
               value={formData.name}
               onChange={handleChange}
@@ -87,14 +93,14 @@ const Contact = () => {
           </div>
           <div className="mb-5">
             <label htmlFor="email" className="feild-label">
-              Email
+              Email Address
             </label>
             <input
               id="email"
               name="email"
               type="email"
               className="field-input field-input-focus"
-              placeholder="JohnDoe@email.com"
+              placeholder="john.smith@company.com"
               autoComplete="email"
               value={formData.email}
               onChange={handleChange}
@@ -103,7 +109,7 @@ const Contact = () => {
           </div>
           <div className="mb-5">
             <label htmlFor="message" className="feild-label">
-              Message
+              Project Details
             </label>
             <textarea
               id="message"
@@ -111,7 +117,7 @@ const Contact = () => {
               type="text"
               rows="4"
               className="field-input field-input-focus"
-              placeholder="Share your thoughts..."
+              placeholder="Tell me about your infrastructure needs, automation goals, or development project..."
               autoComplete="message"
               value={formData.message}
               onChange={handleChange}
@@ -120,11 +126,24 @@ const Contact = () => {
           </div>
           <button
             type="submit"
-            className="w-full px-1 py-3 text-lg text-center rounded-md cursor-pointer bg-radial from-lavender to-royal hover-animation"
+            disabled={isLoading}
+            className="w-full px-1 py-3 text-lg text-center rounded-md cursor-pointer bg-radial from-lavender to-royal hover-animation disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {!isLoading ? "Send" : "Sending..."}
+            {!isLoading ? "Send Message" : "Sending..."}
           </button>
         </form>
+        
+        {/* Additional Contact Info */}
+        <div className="w-full mt-8 pt-6 border-t border-white/10">
+          <div className="text-center text-neutral-400 text-sm">
+            <p className="mb-2">Prefer direct contact?</p>
+            <div className="flex flex-col gap-1">
+              <p>📧 Available for DevOps consulting</p>
+              <p>⚡ Quick response within 24 hours</p>
+              <p>🚀 Let's accelerate your deployment!</p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );

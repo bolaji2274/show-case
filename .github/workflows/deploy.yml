@@ -25,6 +25,10 @@ jobs:
       
     - name: Build application
       run: npm run build
+      env:
+        VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+        VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+        VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3

@@ -386,22 +386,23 @@ export const mySocials = [
     target: "_blank"
   },
   {
+    name: "Instagram",
+    href: "",
+    icon: "/assets/socials/instagram.svg",
+    target: "_blank"
+  },
+  {
     name: "GitHub",
     href: "https://github.com/bolaji2274",
     icon: "/assets/socials/github.svg",
     target: "_blank"
   },
   {
-    name: "Instagram",
+    name: "Twitter",
     href: "",
-    icon: "/assets/socials/instagram.svg",
+    icon: "/assets/socials/twitter.svg",
     target: "_blank"
   },
-  // {
-  //   name: "Twitter",
-  //   href: "",
-  //   icon: "/assets/socials/twitter.svg",
-  // },
 ];
 
 export const experiences = [

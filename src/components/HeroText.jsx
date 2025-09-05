@@ -131,9 +131,11 @@ const HeroText = () => {
           animate="visible"
           transition={{ delay: 1 }}
         >
+          
           Hi, I'm Bolaji
+
         </motion.p>
-        
+
         <div>
           <motion.p
             className="text-4xl font-black text-neutral-300"

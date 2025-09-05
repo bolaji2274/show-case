@@ -84,7 +84,7 @@ const Contact = () => {
               name="name"
               type="text"
               className="field-input field-input-focus"
-              placeholder="Bolaji"
+              placeholder="Bolaji Hammed"
               autoComplete="name"
               value={formData.name}
               onChange={handleChange}

@@ -17,7 +17,20 @@ const Footer = () => {
             target={social.target}
             rel="noopener noreferrer"
           >
-            <img src={social.icon} className="w-5 h-5" alt={social.name} />
+            {/* <img 
+              src={social.icon} 
+              className="w-5 h-5 filter invert" 
+              alt={social.name} 
+            /> */}
+            <img 
+  src={social.icon} 
+  className={`w-5 h-5 ${
+    social.name === 'GitHub' || social.name === 'Twitter' 
+      ? 'filter invert' 
+      : ''
+  }`} 
+  alt={social.name} 
+/>
           </a>
         ))}
       </div>

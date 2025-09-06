@@ -13,6 +13,7 @@ export const myProjects = [
     href: "https://github.com/bolaji2274/IaC-Terraform",
     logo: "",
     image: "/assets/projects/terraform-infra.jpg",
+    target: "_blank",
     tags: [
       {
         id: 1,
@@ -29,11 +30,11 @@ export const myProjects = [
         name: "DevOps",
         path: "/assets/logos/devops.svg",
       },
-      {
-        id: 4,
-        name: "HCL",
-        path: "/assets/logos/hcl.svg",
-      },
+      // {
+      //   id: 4,
+      //   name: "HCL",
+      //   path: "/assets/logos/hcl.svg",
+      // },
     ],
   },
   {
@@ -50,6 +51,7 @@ export const myProjects = [
     href: "https://github.com/bolaji2274/AwsDisasterRecoveryWorkloadTerraform",
     logo: "",
     image: "/assets/projects/disaster-recovery.jpg",
+    target: "_blank",
     tags: [
       {
         id: 1,
@@ -63,14 +65,14 @@ export const myProjects = [
       },
       {
         id: 3,
-        name: "Disaster Recovery",
-        path: "/assets/logos/dr.svg",
-      },
-      {
-        id: 4,
         name: "DevOps",
         path: "/assets/logos/devops.svg",
       },
+      // {
+      //   id: 4,
+      //   name: "Disaster Recovery",
+      //   path: "/assets/logos/dr.svg",
+      // },
     ],
   },
   {
@@ -86,22 +88,24 @@ export const myProjects = [
     ],
     href: "https://github.com/bolaji2274/honeypot-terraform",
     logo: "",
-    image: "/assets/projects/honeypot-security.jpg",
+    image: "/assets/projects/honeypot.png",
+    target: "_blank",
     tags: [
+      
       {
         id: 1,
-        name: "Cybersecurity",
-        path: "/assets/logos/security.svg",
-      },
-      {
-        id: 2,
         name: "Terraform",
         path: "/assets/logos/terraform.svg",
       },
       {
-        id: 3,
+        id: 2,
         name: "AWS",
         path: "/assets/logos/aws.svg",
+      },
+      {
+        id: 3,
+        name: "Cybersecurity",
+        path: "/assets/logos/security.svg",
       },
       {
         id: 4,
@@ -124,6 +128,7 @@ export const myProjects = [
     href: "https://github.com/bolaji2274/terraform-autoscaling",
     logo: "",
     image: "/assets/projects/autoscaling.jpg",
+    target: "_blank",
     tags: [
       {
         id: 1,
@@ -138,12 +143,12 @@ export const myProjects = [
       {
         id: 3,
         name: "Auto-Scaling",
-        path: "/assets/logos/scaling.svg",
+        path: "/assets/logos/autoscaling.svg",
       },
       {
         id: 4,
         name: "CloudWatch",
-        path: "/assets/logos/cloudwatch.svg",
+        path: "/assets/logos/aws-cloudwatch.svg",
       },
     ],
   },
@@ -158,9 +163,10 @@ export const myProjects = [
       "Created automated feeding schedule and health monitoring alerts.",
       "Developed reporting system for farm productivity and financial tracking.",
     ],
-    href: "",
+    href: "https://nasfarm.com",
+    target: "_blank",
     logo: "",
-    image: "/assets/projects/livestock-management.jpg",
+    image: "/assets/projects/livestock.png",
     tags: [
       {
         id: 1,
@@ -196,6 +202,7 @@ export const myProjects = [
       "Integrated with external APIs for weather, news, and other services.",
     ],
     href: "",
+    target: "_blank",
     logo: "",
     image: "/assets/projects/telegram-bot.jpg",
     tags: [
@@ -233,6 +240,7 @@ export const myProjects = [
       "Developed visualization dashboard for sentiment trends and analytics.",
     ],
     href: "",
+    target: "_blank",
     logo: "",
     image: "/assets/projects/sentiment-analysis.jpg",
     tags: [
@@ -248,14 +256,14 @@ export const myProjects = [
       },
       {
         id: 3,
-        name: "NLTK",
-        path: "/assets/logos/nltk.svg",
-      },
-      {
-        id: 4,
         name: "Flask",
         path: "/assets/logos/flask.svg",
       },
+      // {
+      //   id: 4,
+      //   name: "NLTK",
+      //   path: "/assets/logos/nltk.svg",
+      // },
     ],
   },
   {
@@ -270,6 +278,7 @@ export const myProjects = [
       "Built VPC peering and VPN connections for hybrid cloud connectivity.",
     ],
     href: "https://github.com/bolaji2274/vpc-Architecture-with-Terraform",
+    target: "_blank",
     logo: "",
     image: "/assets/projects/vpc-architecture.jpg",
     tags: [
@@ -365,7 +374,7 @@ export const myProjects = [
       {
         id: 4,
         name: "CI/CD",
-        path: "/assets/logos/cicd.svg",
+        path: "/assets/logos/jenkins.svg",
       },
     ],
   },

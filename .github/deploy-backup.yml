@@ -1,0 +1,106 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ main, master ]  # Adjust branch name as needed
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'  # Match your EC2 Node.js version
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci  # Use npm ci for faster, reliable builds
+
+    # Step: Install optimization tools
+    - name: Install optimization tools
+      run: |
+        npm install -g gltf-pipeline
+        npm install -g sharp-cli
+    
+    # Step: Optimize images
+    - name: Optimize images
+      run: |
+        node scripts/optimize-images.js
+      
+    - name: Build application
+      run: npm run build
+      # env:
+      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+      
+    # Step: Analyze bundle size
+    - name: Analyze bundle size
+      run: |
+        echo "📊 Build Analysis:"
+        echo "=================="
+        du -sh dist
+        echo ""
+        echo "JavaScript bundles:"
+        ls -lh dist/assets/js/ || ls -lh dist/assets/*.js
+        echo ""
+        echo "Total assets:"
+        find dist -type f -exec ls -lh {} \; | awk '{sum+=$5} END {print "Total size:", sum/1024/1024, "MB"}'
+          
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          # Navigate to app directory
+          cd ${{ secrets.EC2_APP_PATH }}
+          
+          # Create .env file with proper format
+          cat > .env << 'EOF'
+          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+          EOF
+
+          # Verify .env file was created
+          echo "Environment file contents:"
+          cat .env
+
+          # Pull latest changes
+          git pull origin main
+          
+          # Install dependencies (use npm ci for production)
+          npm ci
+          
+          # Build the application
+          npm run build
+          
+          # # Test Nginx configuration
+          # sudo nginx -t
+          
+          # # Reload Nginx to serve new build
+          # sudo systemctl reload nginx
+
+          # Set proper permissions
+          sudo chown -R www-data:www-data dist/
+          sudo chmod -R 755 dist/
+          
+          # Test Apache configuration
+          sudo apache2ctl configtest
+          
+          # Reload Apache to serve new build
+          sudo systemctl reload apache2
+          
+          echo "Deployment completed successfully!"
+          echo "Node.js version: $(node -v)"
+          echo "Build directory contents:"
+          ls -la dist/

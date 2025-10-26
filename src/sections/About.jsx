@@ -15,22 +15,25 @@ const About = () => {
         {/* Grid 1 - Enhanced Personal Introduction */}
         <div className="flex items-end grid-default-color grid-1">
           {/* <img
-            // src="assets/coding_ai.jpeg"
-            src="assets/coding_4.png"
+          loading="lazy"
+            // src="images/coding_ai.webp"
+            src="images/coding_4.webp"
             className="absolute scale-[1.75] -right-[5rem] -top-[-5rem] md:scale-[4] md:left-20 md:inset-y-7 lg:scale-[1.5] bg-transparent"
             alt="Bolaji coding"
           /> */}
 
            {/* Mobile Image */}
           <img
-            src="assets/coding_4.png"
+          loading="lazy"
+            src="images/coding_4.webp"
             className="absolute md:hidden object-cover object-center w-full h-full opacity-30"
             alt="Bolaji coding"
           />
           
           {/* Desktop Image */}
           <img
-            src="assets/coding_ai.jpeg"
+          loading="lazy"
+            src="images/coding_4.webp"
             // className="hidden md:block absolute object-cover object-center scale-[1.2] right-0 top-0 w-3/5 h-full opacity-40"
             className="absolute scale-[1.75] -right-[5rem] -top-[-5rem] md:scale-[4] md:left-20 md:inset-y-7 lg:scale-[1.5] bg-transparent"
             alt="Bolaji coding with AI"
@@ -90,37 +93,42 @@ const About = () => {
             {/* DevOps Tools */}
             <Card
               style={{ rotate: "-30deg", top: "60%", left: "70%", borderRadius: "30%" }}
-              image="assets/logos/ansible.jpeg"
+              image="images/logos/ansible.webp"
+              loading="lazy"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "-45deg", top: "70%", left: "25%", borderRadius: "30%" }}
-              image="assets/logos/docker.jpeg"
+              image="images/logos/docker.webp"
+              loading="lazy"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "30deg", top: "5%", left: "40%", borderRadius: "30%" }}
-              image="assets/logos/terraform.jpeg"
+              image="images/logos/terraform.webp"
+              loading="lazy"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "-60deg", top: "35%", left: "50%", borderRadius: "30%", width: "59px", height: "70px" }}
-              image="assets/logos/python.jpeg"
+              image="images/logos/python.webp"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "25deg", bottom: "60%", right: "10%", borderRadius: "30%" }}
-              image="assets/logos/circleci.png"
+              image="images/logos/circleci.webp"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "-15deg", bottom: "35%", right: "35%", borderRadius: "30%" }}
-              image="assets/logos/github.jpeg"
+              image="images/logos/github.webp"
+              loading="lazy"
               containerRef={grid2Container}
             />
             <Card
               style={{ rotate: "60deg", bottom: "10%", right: "20%", borderRadius: "30%" }}
-              image="assets/logos/kubernetes.jpeg"
+              image="images/logos/kubernetes.webp"
+              loading="lazy"
               containerRef={grid2Container}
             />
           </div>

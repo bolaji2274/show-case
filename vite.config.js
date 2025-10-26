@@ -48,7 +48,7 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom'],
           
           // Router (if you use it)
-          'router-vendor': ['react-router-dom'],
+          // 'router-vendor': ['react-router-dom'],
           
           // Other large libraries
           // 'animations': ['framer-motion', 'gsap'],

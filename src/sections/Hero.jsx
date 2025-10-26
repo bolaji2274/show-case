@@ -8,7 +8,8 @@ import { Float } from "@react-three/drei";
 import { useMediaQuery } from "react-responsive";
 import { easing } from "maath";
 import { Suspense } from "react";
-import Loader from "../components/Loader";
+// import Loader from "../components/Loader";
+import Spinner from "../components/Spinner";
 
 
 const Hero = () => {
@@ -22,7 +23,7 @@ const Hero = () => {
         style={{ width: "100vw", height: "100vh" }}
       >
         <Canvas camera={{ position: [0, 1, 3] }}>
-          <Suspense fallback={<Loader />}>
+          <Suspense fallback={<Spinner />}>
             <Float>
               <Astronaut
                 scale={isMobile && 0.23}

@@ -22,10 +22,13 @@ const ProjectDetails = ({
             onClick={closeModal}
             className="sticky top-2 right-2 z-10 p-2 ml-auto rounded-sm bg-midnight hover:bg-gray-500 float-right"
           >
-            <img src="assets/close.svg" className="w-6 h-6" alt="Close" />
+            <img
+            loading="lazy" src="assets/close.svg" className="w-6 h-6" alt="Close" />
           </button>
-          {/* <img src={image} alt={title} className="w-full rounded-t-2xl" /> */}
+          {/* <img
+          loading="lazy" src={image} alt={title} className="w-full rounded-t-2xl" /> */}
           <img
+          loading="lazy"
             src={image}
             alt={title}
             className={`w-full rounded-t-2xl ${
@@ -48,6 +51,7 @@ const ProjectDetails = ({
             <div className="flex gap-3">
               {tags.map((tag) => (
                 <img
+                loading="lazy"
                   key={tag.id}
                   src={tag.path}
                   alt={tag.name}
@@ -67,12 +71,14 @@ const ProjectDetails = ({
                 className="inline-flex items-center gap-1 font-medium cursor-pointer hover-animation text-white hover:text-blue-400 transition-colors"
               >
                 View Project{" "}
-                <img src="assets/arrow-up.svg" className="size-4" alt="Arrow" />
+                <img
+                loading="lazy" src="assets/arrow-up.svg" className="size-4" alt="Arrow" />
               </a>
             ) : (
               <span className="inline-flex items-center gap-1 font-medium text-gray-500">
                 Coming Soon{" "}
                 <img
+                loading="lazy"
                   src="assets/arrow-up.svg"
                   className="size-4 opacity-50"
                   alt="Arrow"

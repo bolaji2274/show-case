@@ -109,8 +109,8 @@ jobs:
           
           # Set proper permissions
           echo "🔐 Setting permissions..."
-          sudo chown -R www-data:www-data dist/
-          sudo chmod -R 755 dist/
+          chown -R www-data:www-data dist/
+          chmod -R 755 dist/
           
           # Configure Apache for optimal performance
           echo "⚙️ Configuring Apache..."
@@ -177,18 +177,18 @@ jobs:
           
           # Enable required Apache modules
           echo "🔧 Enabling Apache modules..."
-          sudo a2enmod deflate headers expires rewrite 2>/dev/null || echo "Modules already enabled"
+          a2enmod deflate headers expires rewrite 2>/dev/null || echo "Modules already enabled"
           
           # Test Apache configuration
           echo "🧪 Testing Apache configuration..."
-          sudo apache2ctl configtest
+          apache2ctl configtest
           
           if [ $? -eq 0 ]; then
             echo "✓ Apache configuration is valid"
             
             # Reload Apache
             echo "🔄 Reloading Apache..."
-            sudo systemctl reload apache2
+            systemctl reload apache2
             
             echo "✅ Deployment completed successfully!"
           else
@@ -199,7 +199,7 @@ jobs:
             if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
               rm -rf dist
               tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
-              sudo systemctl reload apache2
+              systemctl reload apache2
               echo "⚠️ Rolled back to previous version"
             fi
             

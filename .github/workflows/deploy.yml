@@ -2,7 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master ]  # Adjust branch name as needed
   pull_request:
     branches: [ main, master ]
 
@@ -17,272 +17,63 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '20'  # Match your EC2 Node.js version
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci
-
-    - name: Install optimization tools
-      run: |
-        npm install -g gltf-pipeline || true
-        npm install -g sharp-cli || true
-    
-    - name: Optimize images
-      run: |
-        if [ -f "scripts/optimize-images.js" ]; then
-          echo "🖼️ Optimizing images..."
-          node scripts/optimize-images.js
-        else
-          echo "⚠️ Image optimization script not found, skipping..."
-        fi
-    
-    - name: Optimize 3D models
-      run: |
-        if [ -d "public/models" ]; then
-          echo "🎨 Optimizing 3D models..."
-          cd public/models
-          for model in *.glb; do
-            if [ -f "$model" ] && [[ ! "$model" =~ ^optimized- ]]; then
-              echo "Processing $model..."
-              gltf-pipeline -i "$model" -o "optimized-$model" -d 2>/dev/null || echo "Skipped $model"
-            fi
-          done
-          cd ../..
-        else
-          echo "No 3D models found, skipping..."
-        fi
+      run: npm ci  # Use npm ci for faster, reliable builds
       
     - name: Build application
       run: npm run build
-      env:
-        NODE_ENV: production
-        VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-        VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-        VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+      # env:
+      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Analyze bundle size
-      run: |
-        echo "📊 Build Analysis:"
-        du -sh dist
-        echo ""
-        BUNDLE_SIZE=$(du -sm dist | cut -f1)
-        echo "Bundle size: ${BUNDLE_SIZE}MB"
-        
-        if [ $BUNDLE_SIZE -gt 10 ]; then
-          echo "⚠️ Warning: Large bundle (${BUNDLE_SIZE}MB)"
-        else
-          echo "✅ Bundle size OK (${BUNDLE_SIZE}MB)"
-        fi
-
-    - name: Create deployment archive
-      run: |
-        echo "📦 Creating archive..."
-        tar -czf dist.tar.gz dist/
-        ls -lh dist.tar.gz
-    
-    - name: Upload to EC2
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        source: "dist.tar.gz"
-        target: "/tmp/"
-        timeout: 120s
-        command_timeout: 10m
-    
-    - name: Deploy on EC2
+    - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
-        timeout: 120s
-        command_timeout: 10m
         script: |
-          set -e
+          # Navigate to app directory
+          cd ${{ secrets.EC2_APP_PATH }}
           
-          echo "🚀 Starting deployment..."
+          # Create .env file with proper format
+          cat > .env << 'EOF'
+          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+          EOF
+          # Verify .env file was created
+          echo "Environment file contents:"
+          cat .env
+          # Pull latest changes
+          git pull origin main
           
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="$APP_PATH/backups"
-          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          # Install dependencies (use npm ci for production)
+          npm ci
           
-          # Verify paths exist
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ Error: APP_PATH does not exist: $APP_PATH"
-            exit 1
-          fi
+          # Build the application
+          npm run build
           
-          # Create backup directory with correct permissions
-          mkdir -p "$BACKUP_DIR"
-          chmod 755 "$BACKUP_DIR"
+          # # Test Nginx configuration
+          # sudo nginx -t
           
-          # Backup current deployment
-          if [ -d "$APP_PATH/dist" ]; then
-            echo "📦 Creating backup..."
-            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null || {
-              echo "⚠️ Backup failed, but continuing..."
-            }
-            
-            # Keep only last 5 backups
-            cd "$BACKUP_DIR"
-            ls -t dist_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
-            cd "$APP_PATH"
-          fi
-          
-          # Verify uploaded file exists
-          if [ ! -f "/tmp/dist.tar.gz" ]; then
-            echo "❌ Error: dist.tar.gz not found in /tmp/"
-            ls -la /tmp/ | grep dist || echo "No dist files in /tmp"
-            exit 1
-          fi
-          
-          echo "📂 Extracting new build..."
-          cd "$APP_PATH"
-          tar -xzf /tmp/dist.tar.gz
-          rm /tmp/dist.tar.gz
-          
-          echo "🔐 Setting permissions..."
+          # # Reload Nginx to serve new build
+          # sudo systemctl reload nginx
+          # Set proper permissions
           sudo chown -R www-data:www-data dist/
           sudo chmod -R 755 dist/
           
-          echo "⚙️ Configuring .htaccess..."
-          cat > dist/.htaccess << 'HTACCESS_EOF'
-          # Enable compression
-          <IfModule mod_deflate.c>
-            AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json image/svg+xml
-          </IfModule>
-
-          # Gzip pre-compressed files
-          <IfModule mod_headers.c>
-            <FilesMatch "\.js\.gz$">
-              AddType "text/javascript" .gz
-              AddEncoding gzip .gz
-            </FilesMatch>
-            <FilesMatch "\.css\.gz$">
-              AddType "text/css" .gz
-              AddEncoding gzip .gz
-            </FilesMatch>
-          </IfModule>
-
-          # Browser caching
-          <IfModule mod_expires.c>
-            ExpiresActive On
-            ExpiresByType image/jpg "access plus 1 year"
-            ExpiresByType image/jpeg "access plus 1 year"
-            ExpiresByType image/gif "access plus 1 year"
-            ExpiresByType image/png "access plus 1 year"
-            ExpiresByType image/webp "access plus 1 year"
-            ExpiresByType text/css "access plus 1 year"
-            ExpiresByType application/javascript "access plus 1 year"
-            ExpiresByType image/x-icon "access plus 1 year"
-  
-            AddType model/gltf-binary .glb
-            AddType model/gltf+json .gltf
-            ExpiresByType model/gltf-binary "access plus 1 year"
-            ExpiresByType model/gltf+json "access plus 1 year"
-          </IfModule>
-
-          # Cache-Control headers
-          <IfModule mod_headers.c>
-            <FilesMatch "\.(jpg|jpeg|png|gif|webp|ico|css|js|glb|gltf|woff|woff2)$">
-              Header set Cache-Control "max-age=31536000, public, immutable"
-            </FilesMatch>
-          </IfModule>
-
-          # React Router
-          <IfModule mod_rewrite.c>
-            RewriteEngine On
-            RewriteBase /
-            RewriteRule ^index\.html$ - [L]
-            RewriteCond %{REQUEST_FILENAME} !-f
-            RewriteCond %{REQUEST_FILENAME} !-d
-            RewriteCond %{REQUEST_FILENAME} !-l
-            RewriteRule . /index.html [L]
-          </IfModule>
-          HTACCESS_EOF
+          # Test Apache configuration
+          sudo apache2ctl configtest
           
-          echo "✓ .htaccess configured"
+          # Reload Apache to serve new build
+          sudo systemctl reload apache2
           
-          echo "🔧 Checking Apache modules..."
-          sudo a2enmod deflate 2>/dev/null || true
-          sudo a2enmod headers 2>/dev/null || true
-          sudo a2enmod expires 2>/dev/null || true
-          sudo a2enmod rewrite 2>/dev/null || true
-          sudo a2enmod ssl 2>/dev/null || true
-          
-          echo "🧪 Testing Apache configuration..."
-          if sudo apache2ctl configtest; then
-            echo "✓ Apache config valid"
-            
-            echo "🔄 Reloading Apache..."
-            sudo systemctl reload apache2
-            
-            echo "✅ Deployment successful!"
-          else
-            echo "❌ Apache config test failed!"
-            
-            # Show error
-            sudo tail -20 /var/log/apache2/error.log
-            
-            # Rollback
-            if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
-              echo "Rolling back..."
-              rm -rf dist
-              tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
-              sudo systemctl reload apache2
-            fi
-            
-            exit 1
-          fi
-          
-          echo ""
-          echo "📊 Deployment Summary:"
-          echo "Timestamp: $TIMESTAMP"
-          echo "Build size: $(du -sh dist 2>/dev/null | cut -f1)"
-          echo "Files: $(find dist -type f 2>/dev/null | wc -l)"
-          
-    - name: Smoke tests
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          echo "🧪 Running smoke tests..."
-          
-          if systemctl is-active --quiet apache2; then
-            echo "✓ Apache running"
-          else
-            echo "❌ Apache not running!"
-            exit 1
-          fi
-          
-          if [ -f "${{ secrets.EC2_APP_PATH }}/dist/index.html" ]; then
-            echo "✓ index.html exists"
-          else
-            echo "❌ index.html missing!"
-            exit 1
-          fi
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "✓ Site responding (HTTP $HTTP_CODE)"
-          else
-            echo "⚠️ HTTP $HTTP_CODE"
-          fi
-          
-          echo "✅ Tests passed!"
-    
-    - name: Deployment status
-      if: always()
-      run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ Deployment successful!"
-          echo "🌐 https://${{ secrets.EC2_HOST }}"
-        else
-          echo "❌ Deployment failed!"
-          echo "Check logs above for details"
-        fi
+          echo "Deployment completed successfully!"
+          echo "Node.js version: $(node -v)"
+          echo "Build directory contents:"
+          ls -la dist/

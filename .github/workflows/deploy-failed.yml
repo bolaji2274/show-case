@@ -29,10 +29,19 @@ jobs:
         npm install -g gltf-pipeline
         npm install -g sharp-cli
     
+    # # Step: Optimize images
+    # - name: Optimize images
+    #   run: |
+    #     node scripts/optimize-images.js
     # Step: Optimize images
     - name: Optimize images
       run: |
-        node scripts/optimize-images.js
+        if [ -f "scripts/optimize-images.js" ]; then
+          echo "🖼️ Optimizing images for better performance"
+          node scripts/optimize-images.js
+        else
+          echo "⚠️ Image optimization script not found, skipping..."
+        fi
       
     - name: Build application
       run: npm run build
@@ -109,8 +118,8 @@ jobs:
           
           # Set proper permissions
           echo "🔐 Setting permissions..."
-          chown -R www-data:www-data dist/
-          chmod -R 755 dist/
+          sudo chown -R www-data:www-data dist/
+          sudo chmod -R 755 dist/
           
           # Configure Apache for optimal performance
           echo "⚙️ Configuring Apache..."
@@ -177,18 +186,18 @@ jobs:
           
           # Enable required Apache modules
           echo "🔧 Enabling Apache modules..."
-          a2enmod deflate headers expires rewrite 2>/dev/null || echo "Modules already enabled"
+          sudo a2enmod deflate headers expires rewrite 2>/dev/null || echo "Modules already enabled"
           
           # Test Apache configuration
           echo "🧪 Testing Apache configuration..."
-          apache2ctl configtest
+          sudo apache2ctl configtest
           
           if [ $? -eq 0 ]; then
             echo "✓ Apache configuration is valid"
             
             # Reload Apache
             echo "🔄 Reloading Apache..."
-            systemctl reload apache2
+            sudo systemctl reload apache2
             
             echo "✅ Deployment completed successfully!"
           else

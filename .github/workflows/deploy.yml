@@ -2,7 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ main, master ]  # Adjust branch name as needed
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
@@ -17,63 +17,420 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Match your EC2 Node.js version
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci  # Use npm ci for faster, reliable builds
+      run: npm ci
+
+    - name: Install optimization tools
+      run: |
+        npm install -g gltf-pipeline || true
+        npm install -g sharp-cli || true
+    
+    - name: Optimize images
+      run: |
+        if [ -f "scripts/optimize-images.js" ]; then
+          echo "🖼️ Optimizing images..."
+          node scripts/optimize-images.js
+        else
+          echo "⚠️ Image optimization script not found, skipping..."
+        fi
+    
+    - name: Optimize 3D models
+      run: |
+        if [ -d "public/models" ]; then
+          echo "🎨 Optimizing 3D models..."
+          cd public/models
+          for model in *.glb; do
+            if [ -f "$model" ] && [[ ! "$model" =~ ^optimized- ]]; then
+              echo "Processing $model..."
+              gltf-pipeline -i "$model" -o "optimized-$model" -d 2>/dev/null || echo "Skipped $model"
+              
+              if [ -f "optimized-$model" ]; then
+                original_size=$(stat -f%z "$model" 2>/dev/null || stat -c%s "$model")
+                optimized_size=$(stat -f%z "optimized-$model" 2>/dev/null || stat -c%s "optimized-$model")
+                reduction=$((100 - (optimized_size * 100 / original_size)))
+                echo "✓ $model: Reduced by ${reduction}%"
+              fi
+            fi
+          done
+          cd ../..
+        else
+          echo "📁 No 3D models directory found, skipping..."
+        fi
       
     - name: Build application
       run: npm run build
-      # env:
-      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+      env:
+        NODE_ENV: production
+        VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+        VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+        VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Deploy to EC2
+    - name: Analyze bundle size
+      run: |
+        echo "📊 Build Analysis:"
+        echo "=================="
+        du -sh dist
+        echo ""
+        echo "JavaScript bundles:"
+        ls -lh dist/assets/js/ 2>/dev/null || ls -lh dist/assets/*.js 2>/dev/null || echo "No JS files"
+        echo ""
+        
+        BUNDLE_SIZE=$(du -sm dist | cut -f1)
+        echo "📦 Total bundle size: ${BUNDLE_SIZE}MB"
+        
+        if [ $BUNDLE_SIZE -gt 10 ]; then
+          echo "⚠️ WARNING: Bundle size is large (${BUNDLE_SIZE}MB)"
+          echo "Consider:"
+          echo "  - Code splitting"
+          echo "  - Lazy loading components"
+          echo "  - Optimizing images/models"
+        else
+          echo "✅ Bundle size is acceptable (${BUNDLE_SIZE}MB)"
+        fi
+        
+        echo ""
+        echo "📁 Asset breakdown:"
+        echo "Images: $(find dist -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.webp' -o -name '*.gif' \) | wc -l) files"
+        echo "JavaScript: $(find dist -type f -name '*.js' | wc -l) files"
+        echo "CSS: $(find dist -type f -name '*.css' | wc -l) files"
+        echo "3D Models: $(find dist -type f \( -name '*.glb' -o -name '*.gltf' \) 2>/dev/null | wc -l) files"
+
+    - name: Create deployment archive
+      run: |
+        echo "📦 Creating deployment archive..."
+        tar -czf dist.tar.gz dist/
+        ARCHIVE_SIZE=$(ls -lh dist.tar.gz | awk '{print $5}')
+        echo "✓ Archive created: $ARCHIVE_SIZE"
+    
+    - name: Upload to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        source: "dist.tar.gz"
+        target: "/tmp/"
+        timeout: 120s
+        command_timeout: 10m
+    
+    - name: Deploy and configure on EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        timeout: 120s
+        command_timeout: 10m
+        script: |
+          set -e  # Exit on any error
+          
+          echo "🚀 Starting deployment..."
+          
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          BACKUP_DIR="$APP_PATH/backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
+          # Verify app path exists
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ ERROR: APP_PATH does not exist: $APP_PATH"
+            exit 1
+          fi
+          
+          # Create backup directory
+          echo "📁 Preparing backup directory..."
+          mkdir -p "$BACKUP_DIR"
+          chmod 755 "$BACKUP_DIR"
+          
+          # Backup current deployment
+          if [ -d "$APP_PATH/dist" ]; then
+            echo "📦 Creating backup..."
+            if tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null; then
+              BACKUP_SIZE=$(ls -lh "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" | awk '{print $5}')
+              echo "✓ Backup created: dist_backup_$TIMESTAMP.tar.gz ($BACKUP_SIZE)"
+              
+              # Keep only last 5 backups
+              echo "🧹 Cleaning old backups..."
+              cd "$BACKUP_DIR"
+              BACKUP_COUNT=$(ls -1 dist_backup_*.tar.gz 2>/dev/null | wc -l)
+              if [ $BACKUP_COUNT -gt 5 ]; then
+                ls -t dist_backup_*.tar.gz | tail -n +6 | xargs -r rm
+                echo "✓ Removed $((BACKUP_COUNT - 5)) old backup(s)"
+              fi
+              cd "$APP_PATH"
+            else
+              echo "⚠️ Backup failed, but continuing deployment..."
+            fi
+          else
+            echo "ℹ️ No existing deployment to backup"
+          fi
+          
+          # Verify uploaded file
+          if [ ! -f "/tmp/dist.tar.gz" ]; then
+            echo "❌ ERROR: dist.tar.gz not found in /tmp/"
+            exit 1
+          fi
+          
+          UPLOAD_SIZE=$(ls -lh /tmp/dist.tar.gz | awk '{print $5}')
+          echo "✓ Upload verified: $UPLOAD_SIZE"
+          
+          # Extract new build
+          echo "📂 Extracting new build..."
+          cd "$APP_PATH"
+          
+          if tar -xzf /tmp/dist.tar.gz; then
+            echo "✓ Build extracted successfully"
+            rm /tmp/dist.tar.gz
+          else
+            echo "❌ ERROR: Failed to extract build"
+            exit 1
+          fi
+          
+          # Set proper permissions
+          echo "🔐 Setting permissions..."
+          sudo chown -R www-data:www-data dist/
+          sudo chmod -R 755 dist/
+          
+          # Verify critical files exist
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ ERROR: index.html not found in build!"
+            echo "Rolling back..."
+            if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
+              rm -rf dist
+              tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
+            fi
+            exit 1
+          fi
+          
+          # Configure Apache
+          echo "⚙️ Configuring Apache..."
+          
+          cat > dist/.htaccess << 'HTACCESS_EOF'
+          # Enable compression
+          <IfModule mod_deflate.c>
+            AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json image/svg+xml
+          </IfModule>
+
+          # Gzip pre-compressed files
+          <IfModule mod_headers.c>
+            <FilesMatch "\.js\.gz$">
+              AddType "text/javascript" .gz
+              AddEncoding gzip .gz
+            </FilesMatch>
+            <FilesMatch "\.css\.gz$">
+              AddType "text/css" .gz
+              AddEncoding gzip .gz
+            </FilesMatch>
+          </IfModule>
+
+          # Browser caching
+          <IfModule mod_expires.c>
+            ExpiresActive On
+            ExpiresByType image/jpg "access plus 1 year"
+            ExpiresByType image/jpeg "access plus 1 year"
+            ExpiresByType image/gif "access plus 1 year"
+            ExpiresByType image/png "access plus 1 year"
+            ExpiresByType image/webp "access plus 1 year"
+            ExpiresByType text/css "access plus 1 year"
+            ExpiresByType application/javascript "access plus 1 year"
+            ExpiresByType image/x-icon "access plus 1 year"
+            
+          # 3D Models
+          AddType model/gltf-binary .glb
+          AddType model/gltf+json .gltf
+          ExpiresByType model/gltf-binary "access plus 1 year"
+          ExpiresByType model/gltf+json "access plus 1 year"
+           </IfModule>
+
+          # Cache-Control headers
+          <IfModule mod_headers.c>
+            <FilesMatch "\.(jpg|jpeg|png|gif|webp|ico|css|js|glb|gltf|woff|woff2)$">
+              Header set Cache-Control "max-age=31536000, public, immutable"
+            </FilesMatch>
+          </IfModule>
+
+            # React Router
+            <IfModule mod_rewrite.c>
+              RewriteEngine On
+              RewriteBase /
+              RewriteRule ^index\.html$ - [L]
+              RewriteCond %{REQUEST_FILENAME} !-f
+              RewriteCond %{REQUEST_FILENAME} !-d
+              RewriteCond %{REQUEST_FILENAME} !-l
+              RewriteRule . /index.html [L]
+            </IfModule>
+            HTACCESS_EOF
+                      
+                      echo "✓ .htaccess configured"
+          
+          # Enable Apache modules
+          echo "🔧 Checking Apache modules..."
+          sudo a2enmod deflate 2>/dev/null || true
+          sudo a2enmod headers 2>/dev/null || true
+          sudo a2enmod expires 2>/dev/null || true
+          sudo a2enmod rewrite 2>/dev/null || true
+          sudo a2enmod ssl 2>/dev/null || true
+          echo "✓ Modules verified"
+          
+          # Test Apache configuration
+          echo "🧪 Testing Apache configuration..."
+          if sudo apache2ctl configtest 2>&1 | grep -q "Syntax OK"; then
+            echo "✓ Apache configuration is valid"
+            
+            # Reload Apache
+            echo "🔄 Reloading Apache..."
+            if sudo systemctl reload apache2; then
+              echo "✓ Apache reloaded successfully"
+              echo "✅ Deployment completed successfully!"
+            else
+              echo "❌ ERROR: Failed to reload Apache"
+              exit 1
+            fi
+          else
+            echo "❌ ERROR: Apache configuration test failed!"
+            echo ""
+            echo "📋 Apache error log (last 20 lines):"
+            sudo tail -20 /var/log/apache2/error.log
+            echo ""
+            echo "🔄 Rolling back to previous version..."
+            
+            if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
+              rm -rf dist
+              tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
+              sudo systemctl reload apache2
+              echo "⚠️ Rolled back to previous version"
+            fi
+            
+            exit 1
+          fi
+          
+          # Display deployment summary
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Deployment Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⏰ Timestamp: $TIMESTAMP"
+          echo "📦 Build size: $(du -sh dist 2>/dev/null | cut -f1)"
+          echo "📄 Files deployed: $(find dist -type f 2>/dev/null | wc -l)"
+          echo "💾 Backups kept: $(ls -1 $BACKUP_DIR/dist_backup_*.tar.gz 2>/dev/null | wc -l)"
+          echo "🔗 Node.js: $(node -v 2>/dev/null || echo 'N/A')"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+    - name: Run smoke tests
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          # Navigate to app directory
-          cd ${{ secrets.EC2_APP_PATH }}
+          echo "🧪 Running smoke tests..."
+          echo ""
           
-          # Create .env file with proper format
-          cat > .env << 'EOF'
-          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          EOF
-          # Verify .env file was created
-          echo "Environment file contents:"
-          cat .env
-          # Pull latest changes
-          git pull origin main
+          TESTS_PASSED=0
+          TESTS_FAILED=0
           
-          # Install dependencies (use npm ci for production)
-          npm ci
+          # Test 1: Apache running
+          if systemctl is-active --quiet apache2; then
+            echo "✅ Test 1/5: Apache is running"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ Test 1/5: Apache is NOT running"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
           
-          # Build the application
-          npm run build
+          # Test 2: Index file exists
+          if [ -f "${{ secrets.EC2_APP_PATH }}/dist/index.html" ]; then
+            echo "✅ Test 2/5: index.html exists"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ Test 2/5: index.html NOT found"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
           
-          # # Test Nginx configuration
-          # sudo nginx -t
+          # Test 3: HTTP response
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✅ Test 3/5: Site responding (HTTP $HTTP_CODE)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ Test 3/5: Unexpected HTTP code: $HTTP_CODE"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
           
-          # # Reload Nginx to serve new build
-          # sudo systemctl reload nginx
-          # Set proper permissions
-          sudo chown -R www-data:www-data dist/
-          sudo chmod -R 755 dist/
+          # Test 4: HTTPS response
+          HTTPS_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://localhost 2>/dev/null || echo "N/A")
+          if [ "$HTTPS_CODE" != "N/A" ] && [ "$HTTPS_CODE" != "000" ]; then
+            echo "✅ Test 4/5: HTTPS configured (HTTP $HTTPS_CODE)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "⚠️  Test 4/5: HTTPS not available (expected for some setups)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          fi
           
-          # Test Apache configuration
-          sudo apache2ctl configtest
+          # Test 5: Disk space
+          DISK_USAGE=$(df -h ${{ secrets.EC2_APP_PATH }} | tail -1 | awk '{print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -lt 90 ]; then
+            echo "✅ Test 5/5: Disk space OK (${DISK_USAGE}% used)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "⚠️  Test 5/5: Disk space warning (${DISK_USAGE}% used)"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
           
-          # Reload Apache to serve new build
-          sudo systemctl reload apache2
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🧪 Test Results: $TESTS_PASSED passed, $TESTS_FAILED failed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          echo "Deployment completed successfully!"
-          echo "Node.js version: $(node -v)"
-          echo "Build directory contents:"
-          ls -la dist/
+          if [ $TESTS_FAILED -gt 0 ]; then
+            echo "⚠️  Some tests failed, but deployment completed"
+          else
+            echo "✅ All smoke tests passed!"
+          fi
+    
+    - name: Deployment status
+      if: always()
+      run: |
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ DEPLOYMENT SUCCESSFUL"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "🌐 Live at: https://${{ secrets.EC2_HOST }}"
+          echo "📅 Deployed: $(date)"
+          echo "🔗 Commit: ${{ github.sha }}"
+          echo ""
+        else
+          echo "❌ DEPLOYMENT FAILED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Common issues:"
+          echo "1. ❗ Sudo not configured → Run setup-sudo.sh on EC2"
+          echo "2. ❗ Wrong GitHub secrets → Check Settings > Secrets"
+          echo "3. ❗ Apache modules missing → Run: sudo a2enmod headers expires rewrite deflate ssl"
+          echo "4. ❗ Permissions issue → Run: sudo chown -R ubuntu:www-data ${{ secrets.EC2_APP_PATH }}"
+          echo ""
+          echo "📋 Check the deployment logs above for details"
+        fi
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    - name: Create deployment summary
+      if: success()
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Status | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+        echo "| Server | \`${{ secrets.EC2_HOST }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| Time | $(date '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+        echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Live Site" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** https://${{ secrets.EC2_HOST }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY

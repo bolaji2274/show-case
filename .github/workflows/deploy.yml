@@ -137,7 +137,7 @@ jobs:
           # Create backup directory
           echo "📁 Preparing backup directory..."
           mkdir -p "$BACKUP_DIR"
-          chmod 755 "$BACKUP_DIR"
+          sudo chmod 755 "$BACKUP_DIR"
           
           # Backup current deployment
           if [ -d "$APP_PATH/dist" ]; then

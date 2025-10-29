@@ -83,10 +83,6 @@ jobs:
         
         if [ $BUNDLE_SIZE -gt 10 ]; then
           echo "⚠️ WARNING: Bundle size is large (${BUNDLE_SIZE}MB)"
-          echo "Consider:"
-          echo "  - Code splitting"
-          echo "  - Lazy loading components"
-          echo "  - Optimizing images/models"
         else
           echo "✅ Bundle size is acceptable (${BUNDLE_SIZE}MB)"
         fi
@@ -96,7 +92,6 @@ jobs:
         echo "Images: $(find dist -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.webp' -o -name '*.gif' \) | wc -l) files"
         echo "JavaScript: $(find dist -type f -name '*.js' | wc -l) files"
         echo "CSS: $(find dist -type f -name '*.css' | wc -l) files"
-        echo "3D Models: $(find dist -type f \( -name '*.glb' -o -name '*.gltf' \) 2>/dev/null | wc -l) files"
 
     - name: Create deployment archive
       run: |
@@ -116,7 +111,7 @@ jobs:
         timeout: 120s
         command_timeout: 10m
     
-    - name: Deploy and configure on EC2
+    - name: Deploy on EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
@@ -204,75 +199,10 @@ jobs:
             exit 1
           fi
           
-          # Configure Apache
-          echo "⚙️ Configuring Apache..."
+          echo "✓ All files in place"
           
-          cat > dist/.htaccess << 'HTACCESS_EOF'
-          # Enable compression
-          <IfModule mod_deflate.c>
-            AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json image/svg+xml
-          </IfModule>
-
-          # Gzip pre-compressed files
-          <IfModule mod_headers.c>
-            <FilesMatch "\.js\.gz$">
-              AddType "text/javascript" .gz
-              AddEncoding gzip .gz
-            </FilesMatch>
-            <FilesMatch "\.css\.gz$">
-              AddType "text/css" .gz
-              AddEncoding gzip .gz
-            </FilesMatch>
-          </IfModule>
-
-          # Browser caching
-          <IfModule mod_expires.c>
-            ExpiresActive On
-            ExpiresByType image/jpg "access plus 1 year"
-            ExpiresByType image/jpeg "access plus 1 year"
-            ExpiresByType image/gif "access plus 1 year"
-            ExpiresByType image/png "access plus 1 year"
-            ExpiresByType image/webp "access plus 1 year"
-            ExpiresByType text/css "access plus 1 year"
-            ExpiresByType application/javascript "access plus 1 year"
-            ExpiresByType image/x-icon "access plus 1 year"
-            
-          # 3D Models
-          AddType model/gltf-binary .glb
-          AddType model/gltf+json .gltf
-          ExpiresByType model/gltf-binary "access plus 1 year"
-          ExpiresByType model/gltf+json "access plus 1 year"
-           </IfModule>
-
-          # Cache-Control headers
-          <IfModule mod_headers.c>
-            <FilesMatch "\.(jpg|jpeg|png|gif|webp|ico|css|js|glb|gltf|woff|woff2)$">
-              Header set Cache-Control "max-age=31536000, public, immutable"
-            </FilesMatch>
-          </IfModule>
-
-            # React Router
-            <IfModule mod_rewrite.c>
-              RewriteEngine On
-              RewriteBase /
-              RewriteRule ^index\.html$ - [L]
-              RewriteCond %{REQUEST_FILENAME} !-f
-              RewriteCond %{REQUEST_FILENAME} !-d
-              RewriteCond %{REQUEST_FILENAME} !-l
-              RewriteRule . /index.html [L]
-            </IfModule>
-            HTACCESS_EOF
-                      
-                      echo "✓ .htaccess configured"
-          
-          # Enable Apache modules
-          echo "🔧 Checking Apache modules..."
-          sudo a2enmod deflate 2>/dev/null || true
-          sudo a2enmod headers 2>/dev/null || true
-          sudo a2enmod expires 2>/dev/null || true
-          sudo a2enmod rewrite 2>/dev/null || true
-          sudo a2enmod ssl 2>/dev/null || true
-          echo "✓ Modules verified"
+          # NOTE: No .htaccess needed - all caching/compression 
+          # is configured in /etc/apache2/sites-available/portfolio-le-ssl.conf
           
           # Test Apache configuration
           echo "🧪 Testing Apache configuration..."
@@ -365,7 +295,7 @@ jobs:
             echo "✅ Test 4/5: HTTPS configured (HTTP $HTTPS_CODE)"
             TESTS_PASSED=$((TESTS_PASSED + 1))
           else
-            echo "⚠️  Test 4/5: HTTPS not available (expected for some setups)"
+            echo "⚠️  Test 4/5: HTTPS not available"
             TESTS_PASSED=$((TESTS_PASSED + 1))
           fi
           
@@ -408,12 +338,11 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "Common issues:"
-          echo "1. ❗ Sudo not configured → Run setup-sudo.sh on EC2"
-          echo "2. ❗ Wrong GitHub secrets → Check Settings > Secrets"
-          echo "3. ❗ Apache modules missing → Run: sudo a2enmod headers expires rewrite deflate ssl"
-          echo "4. ❗ Permissions issue → Run: sudo chown -R ubuntu:www-data ${{ secrets.EC2_APP_PATH }}"
+          echo "1. ❗ Sudo not configured"
+          echo "2. ❗ Wrong GitHub secrets"
+          echo "3. ❗ Apache modules missing"
+          echo "4. ❗ Permissions issue"
           echo ""
-          echo "📋 Check the deployment logs above for details"
         fi
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
@@ -428,9 +357,6 @@ jobs:
         echo "| Server | \`${{ secrets.EC2_HOST }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "| Time | $(date '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
         echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-        echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🌐 Live Site" >> $GITHUB_STEP_SUMMARY
-        echo "**URL:** https://${{ secrets.EC2_HOST }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### ✅ Deployment completed successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "https://${{ secrets.EC2_HOST }}" >> $GITHUB_STEP_SUMMARY

@@ -2,7 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ main, master ]  # Adjust branch name as needed
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
@@ -17,63 +17,120 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Match your EC2 Node.js version
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci  # Use npm ci for faster, reliable builds
-      
+      run: npm ci
+
     - name: Build application
       run: npm run build
-      # env:
-      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+      env:
+        NODE_ENV: production
+        VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+        VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+        VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Deploy to EC2
+    - name: Create deployment archive
+      run: |
+        echo "📦 Creating deployment archive..."
+        tar -czf dist.tar.gz dist/
+        ls -lh dist.tar.gz
+    
+    - name: Upload to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        source: "dist.tar.gz"
+        target: "/tmp/"
+    
+    - name: Deploy on EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          # Navigate to app directory
-          cd ${{ secrets.EC2_APP_PATH }}
+          set -e
           
-          # Create .env file with proper format
-          cat > .env << 'EOF'
-          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          EOF
-          # Verify .env file was created
-          echo "Environment file contents:"
-          cat .env
-          # Pull latest changes
-          git pull origin main
+          echo "🚀 Starting deployment..."
           
-          # Install dependencies (use npm ci for production)
-          npm ci
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          BACKUP_DIR="$APP_PATH/backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           
-          # Build the application
-          npm run build
+          # Create backup directory
+          mkdir -p "$BACKUP_DIR"
           
-          # # Test Nginx configuration
-          # sudo nginx -t
+          # Backup current deployment
+          if [ -d "$APP_PATH/dist" ]; then
+            echo "📦 Creating backup..."
+            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null || echo "Backup skipped"
+            
+            # Keep only last 5 backups
+            cd "$BACKUP_DIR"
+            ls -t dist_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
+            cd "$APP_PATH"
+          fi
           
-          # # Reload Nginx to serve new build
-          # sudo systemctl reload nginx
-          # Set proper permissions
+          # Verify uploaded file
+          if [ ! -f "/tmp/dist.tar.gz" ]; then
+            echo "❌ ERROR: dist.tar.gz not found!"
+            exit 1
+          fi
+          
+          # Extract new build
+          echo "📂 Extracting new build..."
+          cd "$APP_PATH"
+          tar -xzf /tmp/dist.tar.gz
+          rm /tmp/dist.tar.gz
+          
+          # Set permissions
+          echo "🔐 Setting permissions..."
           sudo chown -R www-data:www-data dist/
           sudo chmod -R 755 dist/
           
-          # Test Apache configuration
+          # Test Apache
+          echo "🧪 Testing Apache..."
           sudo apache2ctl configtest
           
-          # Reload Apache to serve new build
+          # Reload Apache
+          echo "🔄 Reloading Apache..."
           sudo systemctl reload apache2
           
-          echo "Deployment completed successfully!"
-          echo "Node.js version: $(node -v)"
-          echo "Build directory contents:"
-          ls -la dist/
+          echo "✅ Deployment completed!"
+          echo "📦 Build size: $(du -sh dist | cut -f1)"
+          echo "📄 Files: $(find dist -type f | wc -l)"
+          
+    - name: Run smoke tests
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "🧪 Running tests..."
+          
+          if [ -f "${{ secrets.EC2_APP_PATH }}/dist/index.html" ]; then
+            echo "✅ index.html exists"
+          else
+            echo "❌ index.html missing!"
+            exit 1
+          fi
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          echo "✅ Site responding (HTTP $HTTP_CODE)"
+          
+          echo "✅ All tests passed!"
+    
+    - name: Deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ DEPLOYMENT SUCCESSFUL"
+          echo "🌐 https://${{ secrets.EC2_HOST }}"
+        else
+          echo "❌ DEPLOYMENT FAILED"
+        fi

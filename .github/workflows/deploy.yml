@@ -82,11 +82,11 @@ jobs:
           # Remove old deployment completely before extraction
           echo "🗑️ Removing old deployment..."
           if [ -d "$APP_PATH/dist" ]; then
-            # rm -rf "$APP_PATH/dist"
-            rm -rf "$APP_PATH/dist" || {
-              echo "⚠️  Could not remove with user permissions, trying sudo..."
-              sudo rm -rf "$APP_PATH/dist"
-            }
+            sudo rm -rf "$APP_PATH/dist"
+            # rm -rf "$APP_PATH/dist" || {
+            #   echo "⚠️  Could not remove with user permissions, trying sudo..."
+            #   sudo rm -rf "$APP_PATH/dist"
+            # }
           fi
 
           # Create dist directory with proper permissions

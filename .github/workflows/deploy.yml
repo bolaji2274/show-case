@@ -53,45 +53,66 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          set -e
-          
-          echo "🚀 Starting deployment..."
-          
+          set -e  # Exit on any error
+          echo "🚀 Deploying..."
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
           BACKUP_DIR="$APP_PATH/backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          
+
           # Create backup directory
           mkdir -p "$BACKUP_DIR"
-          
           # Backup current deployment
           if [ -d "$APP_PATH/dist" ]; then
             echo "📦 Creating backup..."
-            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null || echo "Backup skipped"
-            
-            # Keep only last 5 backups
+            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null || echo "Backup created with warnings"
+             # Keep only last 5 backups
             cd "$BACKUP_DIR"
             ls -t dist_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
             cd "$APP_PATH"
           fi
-          
+
           # Verify uploaded file
           if [ ! -f "/tmp/dist.tar.gz" ]; then
             echo "❌ ERROR: dist.tar.gz not found!"
             exit 1
           fi
-          
-          # Extract new build
+
+          # Remove old deployment completely before extraction
+          echo "🗑️ Removing old deployment..."
+          if [ -d "$APP_PATH/dist" ]; then
+            sudo rm -rf "$APP_PATH/dist"
+          fi
+
+          # Create dist directory with proper permissions
+          sudo mkdir -p "$APP_PATH/dist"
+          sudo chown -R $USER:$USER "$APP_PATH/dist"
+
+          # Extract new build with overwrite flag
           echo "📂 Extracting new build..."
           cd "$APP_PATH"
-          tar -xzf /tmp/dist.tar.gz
+          tar -xzf /tmp/dist.tar.gz --overwrite
           rm /tmp/dist.tar.gz
-          
-          # Set permissions
+
+          # Set proper permissions
           echo "🔐 Setting permissions..."
           sudo chown -R www-data:www-data dist/
           sudo chmod -R 755 dist/
+
+          # Fix any remaining permission issues
+          sudo find dist/ -type f -exec chmod 644 {} \;
+          sudo find dist/ -type d -exec chmod 755 {} \;
           
+          # Verify critical files exist
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ ERROR: index.html not found in build!"
+            echo "Rolling back..."
+            if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
+              rm -rf dist
+              tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
+            fi
+            exit 1
+          fi
+
           # Test Apache
           echo "🧪 Testing Apache..."
           sudo apache2ctl configtest
@@ -103,7 +124,8 @@ jobs:
           echo "✅ Deployment completed!"
           echo "📦 Build size: $(du -sh dist | cut -f1)"
           echo "📄 Files: $(find dist -type f | wc -l)"
-          
+
+
     - name: Run smoke tests
       uses: appleboy/ssh-action@v1.0.3
       with:

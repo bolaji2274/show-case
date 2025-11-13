@@ -18,22 +18,22 @@ export const myProjects = [
       {
         id: 1,
         name: "Terraform",
-        path: "/images/logos/terraform.webp",
+        path: "/images/logos/terraform.svg",
       },
       {
         id: 2,
         name: "AWS",
-        path: "/images/logos/aws.webp",
+        path: "/images/logos/aws.svg",
       },
       {
         id: 3,
         name: "DevOps",
-        path: "/images/logos/devops.webp",
+        path: "/images/logos/devops.svg",
       },
       // {
       //   id: 4,
       //   name: "HCL",
-      //   path: "/images/logos/hcl.webp",
+      //   path: "/images/logos/hcl.svg",
       // },
     ],
   },

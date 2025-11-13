@@ -80,11 +80,15 @@ jobs:
           # Remove old deployment completely before extraction
           echo "🗑️ Removing old deployment..."
           if [ -d "$APP_PATH/dist" ]; then
-            sudo rm -rf "$APP_PATH/dist"
+            # rm -rf "$APP_PATH/dist"
+            rm -rf "$APP_PATH/dist" || {
+              echo "⚠️  Could not remove with user permissions, trying sudo..."
+              sudo rm -rf "$APP_PATH/dist"
+            }
           fi
 
           # Create dist directory with proper permissions
-          sudo mkdir -p "$APP_PATH/dist"
+          mkdir -p "$APP_PATH/dist"
           sudo chown -R $USER:$USER "$APP_PATH/dist"
 
           # Extract new build with overwrite flag

@@ -56,7 +56,9 @@ jobs:
           set -e  # Exit on any error
           echo "🚀 Deploying..."
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="$APP_PATH/backups"
+          # BACKUP_DIR="$APP_PATH/backups"
+          # Change backup directory to user's home to avoid sudo
+          BACKUP_DIR="$HOME/backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
           # Create backup directory

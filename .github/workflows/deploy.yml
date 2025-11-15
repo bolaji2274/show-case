@@ -31,7 +31,22 @@ jobs:
         VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
         VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Deploy to EC2
+    - name: Create deployment archive
+      run: |
+        echo "📦 Creating deployment archive..."
+        tar -czf dist.tar.gz dist/
+        ls -lh dist.tar.gz
+    
+    - name: Upload to EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        source: "dist.tar.gz"
+        target: "/tmp/"
+    
+    - name: Deploy on EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
@@ -58,21 +73,15 @@ jobs:
             ls -t dist_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
           fi
           
-          # Navigate to app directory
+          # Remove old deployment
+          echo "🗑️ Removing old deployment..."
+          rm -rf "$APP_PATH/dist"
+          
+          # Extract new build
+          echo "📂 Extracting new build..."
           cd "$APP_PATH"
-          
-          # Pull latest changes
-          echo "📥 Pulling latest code..."
-          git fetch origin
-          git reset --hard origin/main
-          
-          # Install dependencies
-          echo "📦 Installing dependencies..."
-          npm ci
-          
-          # Build the application
-          echo "🏗️ Building application..."
-          npm run build
+          tar -xzf /tmp/dist.tar.gz
+          rm /tmp/dist.tar.gz
           
           # Set permissions (only this needs sudo)
           echo "🔐 Setting permissions..."

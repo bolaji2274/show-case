@@ -31,94 +31,53 @@ jobs:
         VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
         VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Create deployment archive
-      run: |
-        echo "📦 Creating deployment archive..."
-        tar -czf dist.tar.gz dist/
-        ls -lh dist.tar.gz
-    
-    - name: Upload to EC2
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        source: "dist.tar.gz"
-        target: "/tmp/"
-    
-    - name: Deploy on EC2
+    - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          set -e  # Exit on any error
-          echo "🚀 Deploying..."
+          set -e
+          echo "🚀 Starting deployment..."
+          
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          # BACKUP_DIR="$APP_PATH/backups"
-          # Change backup directory to user's home to avoid sudo
           BACKUP_DIR="$HOME/backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
+          
           # Create backup directory
           mkdir -p "$BACKUP_DIR"
+          
           # Backup current deployment
           if [ -d "$APP_PATH/dist" ]; then
             echo "📦 Creating backup..."
-            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist 2>/dev/null || echo "Backup created with warnings"
-             # Keep only last 5 backups
+            tar -czf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" -C "$APP_PATH" dist || echo "Backup completed"
+            
+            # Keep only last 5 backups
             cd "$BACKUP_DIR"
             ls -t dist_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
-            cd "$APP_PATH"
           fi
-
-          # Verify uploaded file
-          if [ ! -f "/tmp/dist.tar.gz" ]; then
-            echo "❌ ERROR: dist.tar.gz not found!"
-            exit 1
-          fi
-
-          # Remove old deployment completely before extraction
-          echo "🗑️ Removing old deployment..."
-          if [ -d "$APP_PATH/dist" ]; then
-            sudo rm -rf "$APP_PATH/dist"
-            # rm -rf "$APP_PATH/dist" || {
-            #   echo "⚠️  Could not remove with user permissions, trying sudo..."
-            #   sudo rm -rf "$APP_PATH/dist"
-            # }
-          fi
-
-          # Create dist directory with proper permissions
-          mkdir -p "$APP_PATH/dist"
-          sudo chown -R $USER:$USER "$APP_PATH/dist"
-
-          # Extract new build with overwrite flag
-          echo "📂 Extracting new build..."
+          
+          # Navigate to app directory
           cd "$APP_PATH"
-          tar -xzf /tmp/dist.tar.gz --overwrite
-          rm /tmp/dist.tar.gz
-
-          # Set proper permissions
+          
+          # Pull latest changes
+          echo "📥 Pulling latest code..."
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Install dependencies
+          echo "📦 Installing dependencies..."
+          npm ci
+          
+          # Build the application
+          echo "🏗️ Building application..."
+          npm run build
+          
+          # Set permissions (only this needs sudo)
           echo "🔐 Setting permissions..."
           sudo chown -R www-data:www-data dist/
-          sudo chmod -R 755 dist/
-
-          # Fix any remaining permission issues
-          sudo find dist/ -type f -exec chmod 644 {} \;
-          sudo find dist/ -type d -exec chmod 755 {} \;
           
-          # Verify critical files exist
-          if [ ! -f "dist/index.html" ]; then
-            echo "❌ ERROR: index.html not found in build!"
-            echo "Rolling back..."
-            if [ -f "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz" ]; then
-              rm -rf dist
-              tar -xzf "$BACKUP_DIR/dist_backup_$TIMESTAMP.tar.gz"
-            fi
-            exit 1
-          fi
-
           # Test Apache
           echo "🧪 Testing Apache..."
           sudo apache2ctl configtest
@@ -130,35 +89,3 @@ jobs:
           echo "✅ Deployment completed!"
           echo "📦 Build size: $(du -sh dist | cut -f1)"
           echo "📄 Files: $(find dist -type f | wc -l)"
-
-
-    - name: Run smoke tests
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          echo "🧪 Running tests..."
-          
-          if [ -f "${{ secrets.EC2_APP_PATH }}/dist/index.html" ]; then
-            echo "✅ index.html exists"
-          else
-            echo "❌ index.html missing!"
-            exit 1
-          fi
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
-          echo "✅ Site responding (HTTP $HTTP_CODE)"
-          
-          echo "✅ All tests passed!"
-    
-    - name: Deployment status
-      if: always()
-      run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ DEPLOYMENT SUCCESSFUL"
-          echo "🌐 https://${{ secrets.EC2_HOST }}"
-        else
-          echo "❌ DEPLOYMENT FAILED"
-        fi

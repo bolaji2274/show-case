@@ -75,7 +75,7 @@ jobs:
           
           # Remove old deployment
           echo "🗑️ Removing old deployment..."
-          sudo rm -rf "$APP_PATH/dist"
+          rm -rf "$APP_PATH/dist"
           
           # Extract new build
           echo "📂 Extracting new build..."

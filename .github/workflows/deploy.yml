@@ -75,13 +75,13 @@ jobs:
           
           # Remove old deployment
           echo "🗑️ Removing old deployment..."
-          rm -rf "$APP_PATH/dist"
+          sudo rm -rf "$APP_PATH/dist"
           
           # Extract new build
           echo "📂 Extracting new build..."
           cd "$APP_PATH"
-          tar -xzf /tmp/dist.tar.gz
-          rm /tmp/dist.tar.gz
+          sudo tar -xzf /tmp/dist.tar.gz
+          sudo rm /tmp/dist.tar.gz
           
           # Set permissions (only this needs sudo)
           echo "🔐 Setting permissions..."

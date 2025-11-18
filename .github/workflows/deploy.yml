@@ -1,10 +1,11 @@
 name: Deploy to EC2 with Backup & Testing
 
+# TRIGGER: When does this workflow run?
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master ]  # Runs when code is pushed to main/master
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master ]  # Runs when PR is created to main/master
 
 env:
   MAX_BACKUPS: 5
@@ -94,12 +95,17 @@ jobs:
         script: |
           echo "=== Pre-Deployment Health Check ==="
           
-          # Check Apache status
-          if ! sudo systemctl is-active --quiet apache2; then
+          # Configure git safe directory
+          cd ${{ secrets.EC2_APP_PATH }}
+          git config --global --add safe.directory $(pwd) || true
+          
+          # Check Apache status (without sudo if possible)
+          if systemctl is-active --quiet apache2 2>/dev/null || sudo systemctl is-active --quiet apache2 2>/dev/null; then
+            echo "✅ Apache is running"
+          else
             echo "❌ Apache is not running"
             exit 1
           fi
-          echo "✅ Apache is running"
           
           # Check disk space (fail if less than 10% free)
           DISK_USAGE=$(df -h ${{ secrets.EC2_APP_PATH }} | awk 'NR==2 {print $5}' | sed 's/%//')

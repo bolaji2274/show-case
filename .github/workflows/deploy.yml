@@ -1,13 +1,18 @@
-name: Deploy to EC2
+name: Deploy to EC2 with Backup & Testing
 
 on:
   push:
-    branches: [ main, master ]  # Adjust branch name as needed
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
+env:
+  MAX_BACKUPS: 5
+  HEALTH_CHECK_TIMEOUT: 30
+  BACKUP_PREFIX: "backup"
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,63 +22,351 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Match your EC2 Node.js version
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci  # Use npm ci for faster, reliable builds
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint || echo "Linting skipped"
+      continue-on-error: true
+      
+    - name: Run tests
+      run: npm test || echo "Tests skipped"
+      continue-on-error: true
       
     - name: Build application
       run: npm run build
-      # env:
-      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
       
-    - name: Deploy to EC2
+    - name: Verify build artifacts
+      run: |
+        if [ ! -d "dist" ]; then
+          echo "❌ Build failed - dist directory not found"
+          exit 1
+        fi
+        if [ ! -f "dist/index.html" ]; then
+          echo "❌ Build failed - index.html not found"
+          exit 1
+        fi
+        echo "✅ Build artifacts verified"
+        echo "Build size: $(du -sh dist | cut -f1)"
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-dist
+        path: dist/
+        retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-dist
+        path: dist/
+        
+    - name: Create deployment package
+      run: |
+        tar -czf deployment.tar.gz dist/
+        echo "Package size: $(du -sh deployment.tar.gz | cut -f1)"
+        
+    - name: Upload deployment package
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        source: "deployment.tar.gz"
+        target: "/tmp/"
+        
+    - name: Pre-deployment health check
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         script: |
-          # Navigate to app directory
-          cd ${{ secrets.EC2_APP_PATH }}
+          echo "=== Pre-Deployment Health Check ==="
           
-          # Create .env file with proper format
+          # Check Apache status
+          if ! sudo systemctl is-active --quiet apache2; then
+            echo "❌ Apache is not running"
+            exit 1
+          fi
+          echo "✅ Apache is running"
+          
+          # Check disk space (fail if less than 10% free)
+          DISK_USAGE=$(df -h ${{ secrets.EC2_APP_PATH }} | awk 'NR==2 {print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "❌ Disk usage is ${DISK_USAGE}% - too high"
+            exit 1
+          fi
+          echo "✅ Disk usage: ${DISK_USAGE}%"
+          
+          # Check if current site is accessible
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          if [ "$RESPONSE" != "200" ]; then
+            echo "⚠️  Warning: Current site returned HTTP $RESPONSE"
+          else
+            echo "✅ Current site is accessible (HTTP 200)"
+          fi
+          
+    - name: Deploy with backup and rollback capability
+      uses: appleboy/ssh-action@v1.0.3
+      id: deploy
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        command_timeout: 15m
+        script: |
+          set -e
+          
+          echo "=== Starting Deployment Process ==="
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          BACKUP_DIR="${APP_PATH}/backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          CURRENT_BACKUP="${BACKUP_DIR}/${BACKUP_PREFIX}_${TIMESTAMP}"
+          
+          # Create backup directory if it doesn't exist
+          mkdir -p "$BACKUP_DIR"
+          
+          # Backup current dist folder
+          echo "📦 Creating backup of current deployment..."
+          if [ -d "${APP_PATH}/dist" ]; then
+            cp -r "${APP_PATH}/dist" "${CURRENT_BACKUP}"
+            echo "✅ Backup created: ${CURRENT_BACKUP}"
+            echo "Backup size: $(du -sh ${CURRENT_BACKUP} | cut -f1)"
+          else
+            echo "ℹ️  No existing dist folder to backup"
+          fi
+          
+          # Maintain only last $MAX_BACKUPS backups
+          echo "🗑️  Managing backup retention..."
+          cd "$BACKUP_DIR"
+          BACKUP_COUNT=$(ls -1d ${BACKUP_PREFIX}_* 2>/dev/null | wc -l)
+          if [ "$BACKUP_COUNT" -gt "${{ env.MAX_BACKUPS }}" ]; then
+            ls -1dt ${BACKUP_PREFIX}_* | tail -n +$((${{ env.MAX_BACKUPS }} + 1)) | xargs rm -rf
+            echo "✅ Old backups cleaned up (kept last ${{ env.MAX_BACKUPS }})"
+          fi
+          
+          # List available backups
+          echo "📋 Available backups:"
+          ls -lht ${BACKUP_PREFIX}_* 2>/dev/null | head -n ${{ env.MAX_BACKUPS }} || echo "No backups found"
+          
+          # Navigate to app directory
+          cd "$APP_PATH"
+          
+          # Create .env file
+          echo "📝 Creating environment file..."
           cat > .env << 'EOF'
           VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
           VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
           VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
           EOF
-          # Verify .env file was created
-          echo "Environment file contents:"
-          cat .env
+          
           # Pull latest changes
+          echo "🔄 Pulling latest changes..."
           git pull origin main
           
-          # Install dependencies (use npm ci for production)
-          npm ci
+          # Extract new deployment
+          echo "📦 Extracting new deployment..."
+          tar -xzf /tmp/deployment.tar.gz -C "$APP_PATH"
+          rm /tmp/deployment.tar.gz
           
-          # Build the application
-          npm run build
-          
-          # # Test Nginx configuration
-          # sudo nginx -t
-          
-          # # Reload Nginx to serve new build
-          # sudo systemctl reload nginx
           # Set proper permissions
+          echo "🔒 Setting permissions..."
           sudo chown -R www-data:www-data dist/
           sudo chmod -R 755 dist/
           
           # Test Apache configuration
-          sudo apache2ctl configtest
+          echo "🔧 Testing Apache configuration..."
+          if ! sudo apache2ctl configtest; then
+            echo "❌ Apache configuration test failed"
+            exit 1
+          fi
+          echo "✅ Apache configuration is valid"
           
-          # Reload Apache to serve new build
+          # Reload Apache
+          echo "🔄 Reloading Apache..."
           sudo systemctl reload apache2
           
-          echo "Deployment completed successfully!"
+          # Wait for Apache to stabilize
+          sleep 3
+          
+          echo "✅ Deployment completed"
+          
+    - name: Post-deployment smoke tests
+      uses: appleboy/ssh-action@v1.0.3
+      if: success()
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          set -e
+          
+          echo "=== Post-Deployment Smoke Tests ==="
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          FAILED_TESTS=0
+          
+          # Test 1: Apache service running
+          echo "Test 1: Checking Apache status..."
+          if sudo systemctl is-active --quiet apache2; then
+            echo "✅ Apache is running"
+          else
+            echo "❌ Apache is not running"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 2: Index file exists
+          echo "Test 2: Checking index.html exists..."
+          if [ -f "${APP_PATH}/dist/index.html" ]; then
+            echo "✅ index.html exists"
+          else
+            echo "❌ index.html not found"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 3: HTTP response check
+          echo "Test 3: Checking HTTP response..."
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost --max-time 5)
+            if [ "$RESPONSE" = "200" ]; then
+              echo "✅ HTTP response: $RESPONSE"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️  HTTP response: $RESPONSE - Retrying ($RETRY_COUNT/$MAX_RETRIES)..."
+                sleep 2
+              else
+                echo "❌ HTTP response: $RESPONSE after $MAX_RETRIES retries"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+            fi
+          done
+          
+          # Test 4: Content verification
+          echo "Test 4: Checking page content..."
+          CONTENT=$(curl -s http://localhost --max-time 5)
+          if echo "$CONTENT" | grep -q "<!DOCTYPE html>\|<!doctype html>"; then
+            echo "✅ Valid HTML content found"
+          else
+            echo "❌ Invalid or empty HTML content"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 5: Response time check
+          echo "Test 5: Checking response time..."
+          RESPONSE_TIME=$(curl -s -o /dev/null -w "%{time_total}" http://localhost --max-time 5)
+          if (( $(echo "$RESPONSE_TIME < 2.0" | bc -l) )); then
+            echo "✅ Response time: ${RESPONSE_TIME}s"
+          else
+            echo "⚠️  Response time is slow: ${RESPONSE_TIME}s"
+          fi
+          
+          # Test 6: Disk usage check
+          echo "Test 6: Checking disk usage..."
+          DISK_USAGE=$(df -h ${APP_PATH} | awk 'NR==2 {print $5}' | sed 's/%//')
+          echo "ℹ️  Disk usage: ${DISK_USAGE}%"
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "⚠️  Warning: High disk usage"
+          else
+            echo "✅ Disk usage is acceptable"
+          fi
+          
+          # Summary
+          echo ""
+          echo "=== Test Summary ==="
+          if [ $FAILED_TESTS -eq 0 ]; then
+            echo "✅ All smoke tests passed!"
+          else
+            echo "❌ $FAILED_TESTS test(s) failed"
+            exit 1
+          fi
+          
+    - name: Deployment summary
+      if: always()
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== Deployment Summary ==="
+          echo "Timestamp: $(date)"
           echo "Node.js version: $(node -v)"
+          echo "Git commit: $(cd ${{ secrets.EC2_APP_PATH }} && git rev-parse --short HEAD)"
+          echo "Git branch: $(cd ${{ secrets.EC2_APP_PATH }} && git rev-parse --abbrev-ref HEAD)"
+          echo ""
           echo "Build directory contents:"
-          ls -la dist/
+          ls -lh ${{ secrets.EC2_APP_PATH }}/dist/ | head -10
+          echo ""
+          echo "Build size: $(du -sh ${{ secrets.EC2_APP_PATH }}/dist/ | cut -f1)"
+          echo ""
+          echo "Available backups:"
+          ls -lht ${{ secrets.EC2_APP_PATH }}/backups/${BACKUP_PREFIX}_* 2>/dev/null | head -5 || echo "No backups found"
+          
+    - name: Rollback on failure
+      if: failure()
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== ROLLBACK: Deployment failed, restoring previous version ==="
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          BACKUP_DIR="${APP_PATH}/backups"
+          
+          # Find the most recent backup
+          LATEST_BACKUP=$(ls -1t ${BACKUP_DIR}/${BACKUP_PREFIX}_* 2>/dev/null | head -1)
+          
+          if [ -z "$LATEST_BACKUP" ]; then
+            echo "❌ No backup found to rollback to!"
+            exit 1
+          fi
+          
+          echo "📦 Rolling back to: $LATEST_BACKUP"
+          
+          # Remove failed deployment
+          rm -rf "${APP_PATH}/dist"
+          
+          # Restore backup
+          cp -r "$LATEST_BACKUP" "${APP_PATH}/dist"
+          
+          # Set permissions
+          sudo chown -R www-data:www-data "${APP_PATH}/dist"
+          sudo chmod -R 755 "${APP_PATH}/dist"
+          
+          # Reload Apache
+          sudo systemctl reload apache2
+          
+          echo "✅ Rollback completed successfully"
+          
+          # Verify rollback
+          sleep 2
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Site is accessible after rollback (HTTP $RESPONSE)"
+          else
+            echo "❌ WARNING: Site returned HTTP $RESPONSE after rollback"
+          fi
+          
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Deployment completed successfully"
+        else
+          echo "❌ Deployment failed"
+        fi

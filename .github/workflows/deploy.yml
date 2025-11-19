@@ -121,7 +121,21 @@ jobs:
           else
             echo "✅ Current site is accessible (HTTP 200)"
           fi
-          
+    - name: Diagnose permissions
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== Permission Diagnosis ==="
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          echo "User: $(whoami)"
+          echo "Can write to app path: [$(test -w "$APP_PATH" && echo 'YES' || echo 'NO')]"
+          echo "Can write to dist: [$(test -w "$APP_PATH/dist" && echo 'YES' || echo 'NO')]"
+          echo "Current dist owner: $(ls -ld "$APP_PATH/dist" 2>/dev/null | awk '{print $3}')"
+          echo "Sudo available: [$(which sudo && echo 'YES' || echo 'NO')]"
+          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"     
     - name: Deploy with backup and rollback capability
       uses: appleboy/ssh-action@v1.0.3
       id: deploy

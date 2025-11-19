@@ -1,11 +1,10 @@
 name: Deploy to EC2 with Backup & Testing
 
-# TRIGGER: When does this workflow run?
 on:
   push:
-    branches: [ main, master ]  # Runs when code is pushed to main/master
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]  # Runs when PR is created to main/master
+    branches: [ main, master ]
 
 env:
   MAX_BACKUPS: 5
@@ -85,17 +84,6 @@ jobs:
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         source: "deployment.tar.gz"
         target: "/tmp/"
-    - name: Set correct directory permissions
-        # This step runs the commands using the runner's built-in sudo access
-      run: |
-        # Add the runner user (often 'runner' or 'ubuntu') to the www-data group
-        sudo usermod -aG www-data $USER
-
-        # Change group ownership of your project directory
-        sudo chown -R ubuntu:www-data ${{ secrets.EC2_APP_PATH }}
-
-        # Grant group write permissions recursively
-        sudo chmod -R g+rw ${{ secrets.EC2_APP_PATH }}
         
     - name: Pre-deployment health check
       uses: appleboy/ssh-action@v1.0.3
@@ -110,7 +98,7 @@ jobs:
           cd ${{ secrets.EC2_APP_PATH }}
           git config --global --add safe.directory $(pwd) || true
           
-          # Check Apache status (without sudo if possible)
+          # Check Apache status
           if systemctl is-active --quiet apache2 2>/dev/null || sudo systemctl is-active --quiet apache2 2>/dev/null; then
             echo "✅ Apache is running"
           else
@@ -118,7 +106,7 @@ jobs:
             exit 1
           fi
           
-          # Check disk space (fail if less than 10% free)
+          # Check disk space (fail if more than 90% used)
           DISK_USAGE=$(df -h ${{ secrets.EC2_APP_PATH }} | awk 'NR==2 {print $5}' | sed 's/%//')
           if [ "$DISK_USAGE" -gt 90 ]; then
             echo "❌ Disk usage is ${DISK_USAGE}% - too high"
@@ -142,45 +130,55 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         command_timeout: 15m
+        envs: MAX_BACKUPS,BACKUP_PREFIX
         script: |
           set -e
           
           echo "=== Starting Deployment Process ==="
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="${HOME}/backups"
+          # Store backups in home directory to avoid permission issues
+          BACKUP_DIR="$HOME/deployments/backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           CURRENT_BACKUP="${BACKUP_DIR}/${BACKUP_PREFIX}_${TIMESTAMP}"
           
           # Create backup directory if it doesn't exist
           mkdir -p "$BACKUP_DIR"
+          echo "📁 Backup directory: $BACKUP_DIR"
           
           # Backup current dist folder
           echo "📦 Creating backup of current deployment..."
           if [ -d "${APP_PATH}/dist" ]; then
+            # Copy dist folder to backup location
             cp -r "${APP_PATH}/dist" "${CURRENT_BACKUP}"
             echo "✅ Backup created: ${CURRENT_BACKUP}"
             echo "Backup size: $(du -sh ${CURRENT_BACKUP} | cut -f1)"
+            
+            # Save git commit info for reference
+            cd "${APP_PATH}"
+            git rev-parse --short HEAD > "${CURRENT_BACKUP}/commit.txt" 2>/dev/null || echo "unknown" > "${CURRENT_BACKUP}/commit.txt"
+            date > "${CURRENT_BACKUP}/timestamp.txt"
           else
-            echo "ℹ️  No existing dist folder to backup"
+            echo "ℹ️  No existing dist folder to backup (first deployment)"
+            # Create a marker file for first deployment
+            mkdir -p "${CURRENT_BACKUP}"
+            echo "First deployment - no previous build" > "${CURRENT_BACKUP}/first_deployment.txt"
           fi
           
-          # Maintain only last $MAX_BACKUPS backups
+          # Maintain only last MAX_BACKUPS backups
           echo "🗑️  Managing backup retention..."
           cd "$BACKUP_DIR"
           BACKUP_COUNT=$(ls -1d ${BACKUP_PREFIX}_* 2>/dev/null | wc -l)
-          if [ "$BACKUP_COUNT" -gt "${{ env.MAX_BACKUPS }}" ]; then
-            ls -1dt ${BACKUP_PREFIX}_* | tail -n +$((${{ env.MAX_BACKUPS }} + 1)) | xargs rm -rf
-            echo "✅ Old backups cleaned up (kept last ${{ env.MAX_BACKUPS }})"
+          if [ "$BACKUP_COUNT" -gt "${MAX_BACKUPS}" ]; then
+            ls -1dt ${BACKUP_PREFIX}_* | tail -n +$((${MAX_BACKUPS} + 1)) | xargs rm -rf
+            echo "✅ Old backups cleaned up (kept last ${MAX_BACKUPS})"
           fi
           
           # List available backups
           echo "📋 Available backups:"
-          ls -lht ${BACKUP_PREFIX}_* 2>/dev/null | head -n ${{ env.MAX_BACKUPS }} || echo "No backups found"
+          ls -lht ${BACKUP_PREFIX}_* 2>/dev/null | head -n ${MAX_BACKUPS} || echo "No backups found"
           
           # Navigate to app directory
           cd "$APP_PATH"
-
-          ls -la
           
           # Create .env file
           echo "📝 Creating environment file..."
@@ -193,6 +191,10 @@ jobs:
           # Pull latest changes
           echo "🔄 Pulling latest changes..."
           git pull origin main
+          
+          # Remove old dist folder (with sudo to handle www-data ownership)
+          echo "🗑️  Removing old dist folder..."
+          sudo rm -rf dist/
           
           # Extract new deployment
           echo "📦 Extracting new deployment..."
@@ -237,7 +239,7 @@ jobs:
           
           # Test 1: Apache service running
           echo "Test 1: Checking Apache status..."
-          if sudo systemctl is-active --quiet apache2; then
+          if systemctl is-active --quiet apache2 2>/dev/null || sudo systemctl is-active --quiet apache2 2>/dev/null; then
             echo "✅ Apache is running"
           else
             echo "❌ Apache is not running"
@@ -320,6 +322,7 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
+        envs: BACKUP_PREFIX
         script: |
           echo "=== Deployment Summary ==="
           echo "Timestamp: $(date)"
@@ -333,7 +336,7 @@ jobs:
           echo "Build size: $(du -sh ${{ secrets.EC2_APP_PATH }}/dist/ | cut -f1)"
           echo ""
           echo "Available backups:"
-          ls -lht ${{ secrets.EC2_APP_PATH }}/backups/${BACKUP_PREFIX}_* 2>/dev/null | head -5 || echo "No backups found"
+          ls -lht $HOME/deployments/backups/${BACKUP_PREFIX}_* 2>/dev/null | head -5 || echo "No backups found"
           
     - name: Rollback on failure
       if: failure()
@@ -342,33 +345,65 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
+        envs: BACKUP_PREFIX
         script: |
           echo "=== ROLLBACK: Deployment failed, restoring previous version ==="
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="${HOME}/backups"
+          BACKUP_DIR="$HOME/deployments/backups"
           
-          # Find the most recent backup
-          LATEST_BACKUP=$(ls -1t ${BACKUP_DIR}/${BACKUP_PREFIX}_* 2>/dev/null | head -1)
+          # Find the most recent backup (exclude first_deployment markers)
+          LATEST_BACKUP=$(find ${BACKUP_DIR}/${BACKUP_PREFIX}_* -type d -exec test -f {}/index.html \; -print 2>/dev/null | sort -r | head -1)
           
           if [ -z "$LATEST_BACKUP" ]; then
-            echo "❌ No backup found to rollback to!"
-            exit 1
+            echo "⚠️  No valid backup found to rollback to"
+            echo "ℹ️  This might be your first deployment or all backups are invalid"
+            
+            # Check if there are any backups at all
+            if ls ${BACKUP_DIR}/${BACKUP_PREFIX}_* 1> /dev/null 2>&1; then
+              echo "📋 Available backup directories (may be empty):"
+              ls -lt ${BACKUP_DIR}/${BACKUP_PREFIX}_* 2>/dev/null | head -5
+            fi
+            
+            echo ""
+            echo "🔍 Checking current site status..."
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+            if [ "$RESPONSE" = "200" ]; then
+              echo "✅ Current site is still accessible (HTTP $RESPONSE)"
+              echo "ℹ️  Your previous deployment is still running"
+              exit 0
+            else
+              echo "❌ Current site is not accessible (HTTP $RESPONSE)"
+              echo "⚠️  Manual intervention may be required"
+              exit 1
+            fi
           fi
           
           echo "📦 Rolling back to: $LATEST_BACKUP"
           
-          # Remove failed deployment
-          rm -rf "${APP_PATH}/dist"
+          # Show backup info
+          if [ -f "${LATEST_BACKUP}/commit.txt" ]; then
+            echo "Backup commit: $(cat ${LATEST_BACKUP}/commit.txt)"
+          fi
+          if [ -f "${LATEST_BACKUP}/timestamp.txt" ]; then
+            echo "Backup date: $(cat ${LATEST_BACKUP}/timestamp.txt)"
+          fi
+          
+          # Remove failed deployment (use sudo because www-data owns it)
+          echo "🗑️  Removing failed deployment..."
+          sudo rm -rf "${APP_PATH}/dist"
           
           # Restore backup
-          cp -r "$LATEST_BACKUP" "${APP_PATH}/dist"
+          echo "📦 Restoring backup..."
+          cp -r "${LATEST_BACKUP}" "${APP_PATH}/dist"
           
           # Set permissions
-          chown -R www-data:www-data "${APP_PATH}/dist"
-          chmod -R 755 "${APP_PATH}/dist"
+          echo "🔒 Setting permissions..."
+          sudo chown -R www-data:www-data "${APP_PATH}/dist"
+          sudo chmod -R 755 "${APP_PATH}/dist"
           
           # Reload Apache
-          systemctl reload apache2
+          echo "🔄 Reloading Apache..."
+          sudo systemctl reload apache2
           
           echo "✅ Rollback completed successfully"
           

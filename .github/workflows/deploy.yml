@@ -85,6 +85,17 @@ jobs:
         key: ${{ secrets.EC2_PRIVATE_KEY }}
         source: "deployment.tar.gz"
         target: "/tmp/"
+    - name: Set correct directory permissions
+        # This step runs the commands using the runner's built-in sudo access
+      run: |
+        # Add the runner user (often 'runner' or 'ubuntu') to the www-data group
+        sudo usermod -aG www-data $USER
+
+        # Change group ownership of your project directory
+        sudo chown -R ubuntu:www-data ${{ secrets.EC2_APP_PATH }}
+
+        # Grant group write permissions recursively
+        sudo chmod -R g+rw ${{ secrets.EC2_APP_PATH }}
         
     - name: Pre-deployment health check
       uses: appleboy/ssh-action@v1.0.3
@@ -353,11 +364,11 @@ jobs:
           cp -r "$LATEST_BACKUP" "${APP_PATH}/dist"
           
           # Set permissions
-          sudo chown -R www-data:www-data "${APP_PATH}/dist"
-          sudo chmod -R 755 "${APP_PATH}/dist"
+          chown -R www-data:www-data "${APP_PATH}/dist"
+          chmod -R 755 "${APP_PATH}/dist"
           
           # Reload Apache
-          sudo systemctl reload apache2
+          systemctl reload apache2
           
           echo "✅ Rollback completed successfully"
           

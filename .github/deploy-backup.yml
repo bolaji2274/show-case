@@ -54,6 +54,22 @@ jobs:
         echo "Total assets:"
         find dist -type f -exec ls -lh {} \; | awk '{sum+=$5} END {print "Total size:", sum/1024/1024, "MB"}'
           
+    - name: Diagnose permissions
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== Permission Diagnosis ==="
+          APP_PATH="${{ secrets.EC2_APP_PATH }}"
+          echo "User: $(whoami)"
+          echo "Can write to app path: [$(test -w "$APP_PATH" && echo 'YES' || echo 'NO')]"
+          echo "Can write to dist: [$(test -w "$APP_PATH/dist" && echo 'YES' || echo 'NO')]"
+          echo "Current dist owner: $(ls -ld "$APP_PATH/dist" 2>/dev/null | awk '{print $3}')"
+          echo "Sudo available: [$(which sudo && echo 'YES' || echo 'NO')]"
+          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"
+          
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:

@@ -99,7 +99,7 @@ jobs:
           git config --global --add safe.directory $(pwd) || true
           
           # Check Apache status
-          if systemctl is-active --quiet apache2 2>/dev/null || sudo systemctl is-active --quiet apache2 2>/dev/null; then
+          if sudo systemctl is-active --quiet apache2; then
             echo "✅ Apache is running"
           else
             echo "❌ Apache is not running"
@@ -135,7 +135,7 @@ jobs:
           echo "Can write to dist: [$(test -w "$APP_PATH/dist" && echo 'YES' || echo 'NO')]"
           echo "Current dist owner: $(ls -ld "$APP_PATH/dist" 2>/dev/null | awk '{print $3}')"
           echo "Sudo available: [$(which sudo && echo 'YES' || echo 'NO')]"
-          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"     
+          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"      
     - name: Deploy with backup and rollback capability
       uses: appleboy/ssh-action@v1.0.3
       id: deploy
@@ -194,28 +194,30 @@ jobs:
           # Navigate to app directory
           cd "$APP_PATH"
           
-           # Check and fix app directory permissions if needed
-          # echo "🔍 Checking app directory permissions..."
-          # if [ ! -w "$APP_PATH" ]; then
-          #   echo "⚠️  App directory not writable, fixing permissions..."
-          #   sudo chown -R $USER:$USER "$APP_PATH"
-          # fi
-
-          # # Create .env file
+          # Check and fix app directory permissions comprehensively
+          echo "🔍 Checking app directory permissions..."
+          if [ ! -w "$APP_PATH" ] || [ ! -w "$APP_PATH/.git" ]; then
+            echo "⚠️  Fixing app directory and git permissions..."
+            sudo chown -R $USER:$USER "$APP_PATH"
+            echo "✅ Permissions fixed"
+          fi
+          
+          # Create .env file
           echo "📝 Creating environment file..."
           cat > .env << 'EOF'
           VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
           VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
           VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
           EOF
+          echo "✅ Environment file created"
           
           # Pull latest changes
-          # echo "🔄 Pulling latest changes..."
-          # git pull origin main
+          echo "🔄 Pulling latest changes..."
+          git pull origin main
           
           # Remove old dist folder (with sudo to handle www-data ownership)
           echo "🗑️  Removing old dist folder..."
-          rm -rf dist/
+          sudo rm -rf dist/
           
           # Extract new deployment
           echo "📦 Extracting new deployment..."

@@ -195,11 +195,11 @@ jobs:
           cd "$APP_PATH"
           
            # Check and fix app directory permissions if needed
-          echo "🔍 Checking app directory permissions..."
-          if [ ! -w "$APP_PATH" ]; then
-            echo "⚠️  App directory not writable, fixing permissions..."
-            sudo chown -R $USER:$USER "$APP_PATH"
-          fi
+          # echo "🔍 Checking app directory permissions..."
+          # if [ ! -w "$APP_PATH" ]; then
+          #   echo "⚠️  App directory not writable, fixing permissions..."
+          #   sudo chown -R $USER:$USER "$APP_PATH"
+          # fi
 
           # # Create .env file
           echo "📝 Creating environment file..."
@@ -215,7 +215,7 @@ jobs:
           
           # Remove old dist folder (with sudo to handle www-data ownership)
           echo "🗑️  Removing old dist folder..."
-          sudo rm -rf dist/
+          rm -rf dist/
           
           # Extract new deployment
           echo "📦 Extracting new deployment..."

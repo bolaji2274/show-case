@@ -230,7 +230,7 @@ jobs:
           
           # Test Apache configuration
           echo "🔧 Testing Apache configuration..."
-          if ! sudo apache2ctl configtest; then
+          if ! sudo -n apache2ctl configtest; then
             echo "❌ Apache configuration test failed"
             exit 1
           fi

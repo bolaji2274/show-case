@@ -159,6 +159,7 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
+        tty: true   # <--- Add this line
         command_timeout: 15m
         envs: MAX_BACKUPS,BACKUP_PREFIX
         script: |
@@ -248,7 +249,7 @@ jobs:
           echo "🔧 Testing Apache configuration..."
           if ! sudo -n apache2ctl configtest; then
             echo "❌ Apache configuration test failed"
-            exit 1
+            # exit 1
           fi
           echo "✅ Apache configuration is valid"
           

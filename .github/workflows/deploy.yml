@@ -182,11 +182,11 @@ jobs:
           
            # Check and fix app directory permissions if needed
           echo "🔍 Checking app directory permissions..."
-          if [ ! -w "$APP_PATH" ]; then
-            echo "⚠️  App directory not writable, fixing permissions..."
-            sudo chown -R $USER:$USER "$APP_PATH"
-          fi
-          
+          # if [ ! -w "$APP_PATH" ]; then
+          #   echo "⚠️  App directory not writable, fixing permissions..."
+          #   sudo chown -R $USER:$USER "$APP_PATH"
+          # fi
+
           # Create .env file
           echo "📝 Creating environment file..."
           cat > .env << 'EOF'

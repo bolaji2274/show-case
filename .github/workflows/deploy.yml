@@ -182,22 +182,22 @@ jobs:
           
            # Check and fix app directory permissions if needed
           echo "🔍 Checking app directory permissions..."
-          # if [ ! -w "$APP_PATH" ]; then
-          #   echo "⚠️  App directory not writable, fixing permissions..."
-          #   sudo chown -R $USER:$USER "$APP_PATH"
-          # fi
+          if [ ! -w "$APP_PATH" ]; then
+            echo "⚠️  App directory not writable, fixing permissions..."
+            sudo chown -R $USER:$USER "$APP_PATH"
+          fi
 
           # # Create .env file
-          # echo "📝 Creating environment file..."
-          # cat > .env << 'EOF'
-          # VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-          # VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-          # VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          # EOF
+          echo "📝 Creating environment file..."
+          cat > .env << 'EOF'
+          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+          EOF
           
           # Pull latest changes
-          echo "🔄 Pulling latest changes..."
-          git pull origin main
+          # echo "🔄 Pulling latest changes..."
+          # git pull origin main
           
           # Remove old dist folder (with sudo to handle www-data ownership)
           echo "🗑️  Removing old dist folder..."

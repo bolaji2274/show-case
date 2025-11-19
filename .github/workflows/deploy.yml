@@ -187,13 +187,13 @@ jobs:
           #   sudo chown -R $USER:$USER "$APP_PATH"
           # fi
 
-          # Create .env file
-          echo "📝 Creating environment file..."
-          cat > .env << 'EOF'
-          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          EOF
+          # # Create .env file
+          # echo "📝 Creating environment file..."
+          # cat > .env << 'EOF'
+          # VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+          # VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+          # VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+          # EOF
           
           # Pull latest changes
           echo "🔄 Pulling latest changes..."

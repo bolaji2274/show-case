@@ -141,12 +141,12 @@ jobs:
           CURRENT_BACKUP="${BACKUP_DIR}/${BACKUP_PREFIX}_${TIMESTAMP}"
           
           # Create backup directory if it doesn't exist
-          sudo mkdir -p "$BACKUP_DIR"
+          mkdir -p "$BACKUP_DIR"
           
           # Backup current dist folder
           echo "📦 Creating backup of current deployment..."
           if [ -d "${APP_PATH}/dist" ]; then
-            sudo cp -r "${APP_PATH}/dist" "${CURRENT_BACKUP}"
+            cp -r "${APP_PATH}/dist" "${CURRENT_BACKUP}"
             echo "✅ Backup created: ${CURRENT_BACKUP}"
             echo "Backup size: $(du -sh ${CURRENT_BACKUP} | cut -f1)"
           else

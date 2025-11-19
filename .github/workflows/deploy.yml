@@ -136,7 +136,7 @@ jobs:
           
           echo "=== Starting Deployment Process ==="
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="${APP_PATH}/backups"
+          BACKUP_DIR="${HOME}/backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           CURRENT_BACKUP="${BACKUP_DIR}/${BACKUP_PREFIX}_${TIMESTAMP}"
           
@@ -332,7 +332,7 @@ jobs:
         script: |
           echo "=== ROLLBACK: Deployment failed, restoring previous version ==="
           APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="${APP_PATH}/backups"
+          BACKUP_DIR="${HOME}/backups"
           
           # Find the most recent backup
           LATEST_BACKUP=$(ls -1t ${BACKUP_DIR}/${BACKUP_PREFIX}_* 2>/dev/null | head -1)

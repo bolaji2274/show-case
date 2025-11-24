@@ -261,6 +261,7 @@ jobs:
           sleep 3
           
           echo "✅ Deployment completed"
+        continue-on-error: true
           
     - name: Post-deployment smoke tests
       uses: appleboy/ssh-action@v1.0.3

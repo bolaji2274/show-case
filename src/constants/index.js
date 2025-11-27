@@ -12,7 +12,7 @@ export const myProjects = [
     ],
     href: "https://github.com/bolaji2274/IaC-Terraform",
     logo: "",
-    image: "/images/projects/terraform-infra.webp",
+    image: "/images/projects/terraform.webp",
     target: "_blank",
     tags: [
       {
@@ -50,7 +50,7 @@ export const myProjects = [
     ],
     href: "https://github.com/bolaji2274/AwsDisasterRecoveryWorkloadTerraform",
     logo: "",
-    image: "/images/projects/disaster-recovery.webp",
+    image: "/images/projects/disaster_recovery.webp",
     target: "_blank",
     tags: [
       {
@@ -204,7 +204,7 @@ export const myProjects = [
     href: "",
     target: "_blank",
     logo: "",
-    image: "/images/projects/telegram-bot.webp",
+    image: "/images/projects/telegram_bot1.webp",
     tags: [
       {
         id: 1,
@@ -242,7 +242,7 @@ export const myProjects = [
     href: "",
     target: "_blank",
     logo: "",
-    image: "/images/projects/sentiment-analysis.webp",
+    image: "/images/projects/python_sentiment.webp",
     tags: [
       {
         id: 1,
@@ -280,7 +280,7 @@ export const myProjects = [
     href: "https://github.com/bolaji2274/vpc-Architecture-with-Terraform",
     target: "_blank",
     logo: "",
-    image: "/images/projects/vpc-architecture.webp",
+    image: "/images/projects/vpc_terraform.webp",
     tags: [
       {
         id: 1,
@@ -317,7 +317,7 @@ export const myProjects = [
     ],
     href: "https://github.com/bolaji2274/alx-system_engineering-devops",
     logo: "",
-    image: "/images/projects/devops-scripts.webp",
+    image: "/images/projects/script.webp",
     tags: [
       {
         id: 1,
@@ -354,7 +354,7 @@ export const myProjects = [
     ],
     href: "",
     logo: "",
-    image: "/images/projects/cicd-pipeline.webp",
+    image: "/images/projects/cicd_with_docker.webp",
     tags: [
       {
         id: 1,

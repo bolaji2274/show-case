@@ -174,7 +174,7 @@ jobs:
           docker run -d \
             --name portfolio-ali \
             --restart unless-stopped \
-            -p 80:80 \
+            -p 8080:80 \
             -e NODE_ENV=production \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           

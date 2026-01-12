@@ -15,6 +15,16 @@ RUN npm ci --only=production=false
 # Copy source code
 COPY . .
 
+# Build arguments for environment variables
+ARG VITE_APP_EMAILJS_SERVICE_ID
+ARG VITE_APP_EMAILJS_TEMPLATE_ID
+ARG VITE_APP_EMAILJS_PUBLIC_KEY
+
+# Set environment variables for build
+ENV VITE_APP_EMAILJS_SERVICE_ID=$VITE_APP_EMAILJS_SERVICE_ID
+ENV VITE_APP_EMAILJS_TEMPLATE_ID=$VITE_APP_EMAILJS_TEMPLATE_ID
+ENV VITE_APP_EMAILJS_PUBLIC_KEY=$VITE_APP_EMAILJS_PUBLIC_KEY
+
 # Build the application
 RUN npm run build
 

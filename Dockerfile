@@ -3,6 +3,16 @@
 # Stage 1: Build the application
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache \
+    autoconf \
+    automake \
+    libtool \
+    make \
+    gcc \
+    g++ \
+    zlib-dev \
+    nasm
+
 # Set working directory
 WORKDIR /app
 
@@ -10,7 +20,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production=false
+# RUN npm ci --only=production=false
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .

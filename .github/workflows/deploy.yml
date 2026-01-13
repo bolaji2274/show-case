@@ -1,4 +1,4 @@
-name: Deploy to EC2 with Backup & Testing
+name: Docker CI/CD Pipeline
 
 on:
   push:
@@ -7,19 +7,23 @@ on:
     branches: [ main, master ]
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
   MAX_BACKUPS: 5
-  HEALTH_CHECK_TIMEOUT: 30
-  BACKUP_PREFIX: "backup"
 
 jobs:
-  build:
+  # Test and build job
+  test-and-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Node.js
+    - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -36,55 +40,49 @@ jobs:
       run: npm test || echo "Tests skipped"
       continue-on-error: true
       
-    - name: Build application
-      run: npm run build
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
       
-    - name: Verify build artifacts
-      run: |
-        if [ ! -d "dist" ]; then
-          echo "❌ Build failed - dist directory not found"
-          exit 1
-        fi
-        if [ ! -f "dist/index.html" ]; then
-          echo "❌ Build failed - index.html not found"
-          exit 1
-        fi
-        echo "✅ Build artifacts verified"
-        echo "Build size: $(du -sh dist | cut -f1)"
-        
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+    - name: Log in to GitHub Container Registry
+      if: github.event_name == 'push'
+      uses: docker/login-action@v3
       with:
-        name: build-dist
-        path: dist/
-        retention-days: 7
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: ${{ github.event_name == 'push' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
+          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
+          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
 
+  # Deploy to EC2
   deploy:
-    needs: build
+    needs: test-and-build
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     
     steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: build-dist
-        path: dist/
-        
-    - name: Create deployment package
-      run: |
-        tar -czf deployment.tar.gz dist/
-        echo "Package size: $(du -sh deployment.tar.gz | cut -f1)"
-        
-    - name: Upload deployment package
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        source: "deployment.tar.gz"
-        target: "/tmp/"
-        
     - name: Pre-deployment health check
       uses: appleboy/ssh-action@v1.0.3
       with:
@@ -94,174 +92,119 @@ jobs:
         script: |
           echo "=== Pre-Deployment Health Check ==="
           
-          # Configure git safe directory
-          cd ${{ secrets.EC2_APP_PATH }}
-          git config --global --add safe.directory $(pwd) || true
-          
-          # Check Apache status
-          if systemctl is-active --quiet apache2 2>/dev/null || sudo systemctl is-active --quiet apache2 2>/dev/null; then
-            echo "✅ Apache is running"
-          else
-            echo "❌ Apache is not running"
+          # Check if Docker is installed
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker is not installed"
             exit 1
           fi
+          echo "✅ Docker is installed: $(docker --version)"
           
-          # Check disk space (fail if more than 90% used)
-          DISK_USAGE=$(df -h ${{ secrets.EC2_APP_PATH }} | awk 'NR==2 {print $5}' | sed 's/%//')
+          # Check if Docker Compose is installed
+          if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+            echo "❌ Docker Compose is not installed"
+            exit 1
+          fi
+          echo "✅ Docker Compose is available"
+          
+          # Check disk space
+          DISK_USAGE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
           if [ "$DISK_USAGE" -gt 90 ]; then
             echo "❌ Disk usage is ${DISK_USAGE}% - too high"
             exit 1
           fi
           echo "✅ Disk usage: ${DISK_USAGE}%"
           
-          # Check if current site is accessible
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
-          if [ "$RESPONSE" != "200" ]; then
-            echo "⚠️  Warning: Current site returned HTTP $RESPONSE"
+          # Check if container is running
+          if docker ps | grep -q portfolio-ali; then
+            echo "✅ Current container is running"
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+            echo "Current site HTTP response: $RESPONSE"
           else
-            echo "✅ Current site is accessible (HTTP 200)"
+            echo "ℹ️  No container currently running (first deployment)"
           fi
-    - name: Diagnose permissions
+          
+    - name: Deploy with Docker
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          echo "=== Permission Diagnosis ==="
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          echo "User: $(whoami)"
-          echo "Can write to app path: [$(test -w "$APP_PATH" && echo 'YES' || echo 'NO')]"
-          echo "Can write to dist: [$(test -w "$APP_PATH/dist" && echo 'YES' || echo 'NO')]"
-          echo "Current dist owner: $(ls -ld "$APP_PATH/dist" 2>/dev/null | awk '{print $3}')"
-          echo "Sudo available: [$(which sudo && echo 'YES' || echo 'NO')]"
-          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"
-    - name: Test sudo fix
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          # Test if passwordless sudo works
-          if sudo -n whoami; then
-            echo "✅ Passwordless sudo is working!"
-            sudo -n apache2ctl configtest && echo "✅ Apache config test works!"
-          else
-            echo "❌ Passwordless sudo still not working"
-            echo "Checking sudoers:"
-            sudo cat /etc/sudoers | grep ubuntu || echo "No ubuntu entry in sudoers"
-          fi   
-    - name: Deploy with backup and rollback capability
-      uses: appleboy/ssh-action@v1.0.3
-      id: deploy
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        tty: true   # <--- Add this line
-        command_timeout: 15m
-        envs: MAX_BACKUPS,BACKUP_PREFIX
         script: |
           set -e
           
-          echo "=== Starting Deployment Process ==="
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          # Store backups in home directory to avoid permission issues
-          BACKUP_DIR="$HOME/deployments/backups"
+          echo "=== Docker Deployment Process ==="
+          
+          # Create deployment directory
+          DEPLOY_DIR="$HOME/portfolio-deployment"
+          BACKUP_DIR="$HOME/portfolio-backups"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          CURRENT_BACKUP="${BACKUP_DIR}/${BACKUP_PREFIX}_${TIMESTAMP}"
           
-          # Create backup directory if it doesn't exist
+          mkdir -p "$DEPLOY_DIR"
           mkdir -p "$BACKUP_DIR"
-          echo "📁 Backup directory: $BACKUP_DIR"
           
-          # Backup current dist folder
-          echo "📦 Creating backup of current deployment..."
-          if [ -d "${APP_PATH}/dist" ]; then
-            # Copy dist folder to backup location
-            cp -r "${APP_PATH}/dist" "${CURRENT_BACKUP}"
-            echo "✅ Backup created: ${CURRENT_BACKUP}"
-            echo "Backup size: $(du -sh ${CURRENT_BACKUP} | cut -f1)"
+          cd "$DEPLOY_DIR"
+          
+          # Backup current container if exists
+          if docker ps -a | grep -q portfolio-ali; then
+            echo "📦 Creating backup of current deployment..."
+            docker commit portfolio-ali portfolio-ali:backup-${TIMESTAMP} || true
+            echo "✅ Backup created: portfolio-ali:backup-${TIMESTAMP}"
             
-            # Save git commit info for reference
-            cd "${APP_PATH}"
-            git rev-parse --short HEAD > "${CURRENT_BACKUP}/commit.txt" 2>/dev/null || echo "unknown" > "${CURRENT_BACKUP}/commit.txt"
-            date > "${CURRENT_BACKUP}/timestamp.txt"
-          else
-            echo "ℹ️  No existing dist folder to backup (first deployment)"
-            # Create a marker file for first deployment
-            mkdir -p "${CURRENT_BACKUP}"
-            echo "First deployment - no previous build" > "${CURRENT_BACKUP}/first_deployment.txt"
+            # Clean old backups (keep last 5)
+            BACKUP_COUNT=$(docker images | grep portfolio-ali | grep backup | wc -l)
+            if [ "$BACKUP_COUNT" -gt 5 ]; then
+              docker images | grep portfolio-ali | grep backup | tail -n +6 | awk '{print $3}' | xargs -r docker rmi || true
+            fi
           fi
           
-          # Maintain only last MAX_BACKUPS backups
-          echo "🗑️  Managing backup retention..."
-          cd "$BACKUP_DIR"
-          BACKUP_COUNT=$(ls -1d ${BACKUP_PREFIX}_* 2>/dev/null | wc -l)
-          if [ "$BACKUP_COUNT" -gt "${MAX_BACKUPS}" ]; then
-            ls -1dt ${BACKUP_PREFIX}_* | tail -n +$((${MAX_BACKUPS} + 1)) | xargs rm -rf
-            echo "✅ Old backups cleaned up (kept last ${MAX_BACKUPS})"
-          fi
+          # Login to GitHub Container Registry
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # List available backups
-          echo "📋 Available backups:"
-          ls -lht ${BACKUP_PREFIX}_* 2>/dev/null | head -n ${MAX_BACKUPS} || echo "No backups found"
+          # Pull latest image
+          echo "📥 Pulling latest Docker image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           
-          # Navigate to app directory
-          cd "$APP_PATH"
-          ls -la
+          # Stop and remove old container
+          echo "🛑 Stopping old container..."
+          docker stop portfolio-ali 2>/dev/null || true
+          docker rm portfolio-ali 2>/dev/null || true
           
-           # Check and fix app directory permissions if needed
-          # echo "🔍 Checking app directory permissions..."
-          # if [ ! -w "$APP_PATH" ]; then
-          #   echo "⚠️  App directory not writable, fixing permissions..."
-          #   sudo chown -R $USER:$USER "$APP_PATH"
-          # fi
-
-          # # Create .env file
-          echo "📝 Creating environment file..."
-          cat > .env << 'EOF'
-          VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-          VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-          VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          EOF
+          # Run new container
+          echo "🚀 Starting new container..."
+          docker run -d \
+            --name portfolio-ali \
+            --restart unless-stopped \
+            -p 8080:80 \
+            -e NODE_ENV=production \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           
-          # Pull latest changes
-          # echo "🔄 Pulling latest changes..."
-          # git pull origin main
+          # Wait for container to be healthy
+          echo "⏳ Waiting for container to be healthy..."
+          RETRY_COUNT=0
+          MAX_RETRIES=30
           
-          # Remove old dist folder (with sudo to handle www-data ownership)
-          echo "🗑️  Removing old dist folder..."
-          rm -rf dist/
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if docker inspect --format='{{.State.Health.Status}}' portfolio-ali 2>/dev/null | grep -q "healthy"; then
+              echo "✅ Container is healthy"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Container failed to become healthy"
+              docker logs portfolio-ali --tail 50
+              exit 1
+            fi
+            
+            echo "Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+            sleep 2
+          done
           
-          # Extract new deployment
-          echo "📦 Extracting new deployment..."
-          tar -xzf /tmp/deployment.tar.gz -C "$APP_PATH"
-          rm /tmp/deployment.tar.gz
+          # Clean up unused images
+          echo "🗑️  Cleaning up unused Docker images..."
+          docker image prune -f
           
-          # Set proper permissions
-          # echo "🔒 Setting permissions..."
-          # sudo chown -R www-data:www-data dist/
-          # sudo chmod -R 755 dist/
-          
-          # Test Apache configuration
-          echo "🔧 Testing Apache configuration..."
-          if ! sudo -n apache2ctl configtest; then
-            echo "❌ Apache configuration test failed"
-            # exit 1
-          fi
-          echo "✅ Apache configuration is valid"
-          
-          # Reload Apache
-          echo "🔄 Reloading Apache..."
-          sudo -n systemctl reload apache2
-          
-          # Wait for Apache to stabilize
-          sleep 3
-          
-          echo "✅ Deployment completed"
-        continue-on-error: true
+          echo "✅ Deployment completed successfully"
           
     - name: Post-deployment smoke tests
       uses: appleboy/ssh-action@v1.0.3
@@ -274,31 +217,32 @@ jobs:
           set -e
           
           echo "=== Post-Deployment Smoke Tests ==="
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
           FAILED_TESTS=0
           
-          # Test 1: Apache service running
-          echo "Test 1: Checking Apache status..."
-          if systemctl is-active --quiet apache2 2>/dev/null || sudo -n systemctl is-active --quiet apache2 2>/dev/null; then
-            echo "✅ Apache is running"
+          # Test 1: Container running
+          echo "Test 1: Checking container status..."
+          if docker ps | grep -q portfolio-ali; then
+            echo "✅ Container is running"
           else
-            echo "❌ Apache is not running"
+            echo "❌ Container is not running"
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           
-          # Test 2: Index file exists
-          echo "Test 2: Checking index.html exists..."
-          if [ -f "${APP_PATH}/dist/index.html" ]; then
-            echo "✅ index.html exists"
+          # Test 2: Container health
+          echo "Test 2: Checking container health..."
+          HEALTH=$(docker inspect --format='{{.State.Health.Status}}' portfolio-ali 2>/dev/null || echo "unknown")
+          if [ "$HEALTH" = "healthy" ]; then
+            echo "✅ Container is healthy"
           else
-            echo "❌ index.html not found"
+            echo "❌ Container health: $HEALTH"
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           
-          # Test 3: HTTP response check
+          # Test 3: HTTP response
           echo "Test 3: Checking HTTP response..."
           MAX_RETRIES=5
           RETRY_COUNT=0
+          
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost --max-time 5)
             if [ "$RESPONSE" = "200" ]; then
@@ -326,23 +270,17 @@ jobs:
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           
-          # Test 5: Response time check
+          # Test 5: Response time
           echo "Test 5: Checking response time..."
           RESPONSE_TIME=$(curl -s -o /dev/null -w "%{time_total}" http://localhost --max-time 5)
-          if (( $(echo "$RESPONSE_TIME < 2.0" | bc -l) )); then
-            echo "✅ Response time: ${RESPONSE_TIME}s"
-          else
-            echo "⚠️  Response time is slow: ${RESPONSE_TIME}s"
-          fi
+          echo "ℹ️  Response time: ${RESPONSE_TIME}s"
           
-          # Test 6: Disk usage check
-          echo "Test 6: Checking disk usage..."
-          DISK_USAGE=$(df -h ${APP_PATH} | awk 'NR==2 {print $5}' | sed 's/%//')
-          echo "ℹ️  Disk usage: ${DISK_USAGE}%"
-          if [ "$DISK_USAGE" -gt 90 ]; then
-            echo "⚠️  Warning: High disk usage"
+          # Test 6: Container logs
+          echo "Test 6: Checking for errors in logs..."
+          if docker logs portfolio-ali --tail 20 | grep -iE "error|fatal|panic"; then
+            echo "⚠️  Errors found in container logs"
           else
-            echo "✅ Disk usage is acceptable"
+            echo "✅ No critical errors in logs"
           fi
           
           # Summary
@@ -362,21 +300,23 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
-        envs: BACKUP_PREFIX
         script: |
           echo "=== Deployment Summary ==="
           echo "Timestamp: $(date)"
-          echo "Node.js version: $(node -v)"
-          echo "Git commit: $(cd ${{ secrets.EC2_APP_PATH }} && git rev-parse --short HEAD)"
-          echo "Git branch: $(cd ${{ secrets.EC2_APP_PATH }} && git rev-parse --abbrev-ref HEAD)"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Commit SHA: ${{ github.sha }}"
           echo ""
-          echo "Build directory contents:"
-          ls -lh ${{ secrets.EC2_APP_PATH }}/dist/ | head -10
+          echo "Container Status:"
+          docker ps | grep portfolio-ali || echo "Container not running"
           echo ""
-          echo "Build size: $(du -sh ${{ secrets.EC2_APP_PATH }}/dist/ | cut -f1)"
+          echo "Container Stats:"
+          docker stats --no-stream portfolio-ali 2>/dev/null || echo "Stats unavailable"
           echo ""
-          echo "Available backups:"
-          ls -lht $HOME/deployments/backups/${BACKUP_PREFIX}_* 2>/dev/null | head -5 || echo "No backups found"
+          echo "Available Backups:"
+          docker images | grep portfolio-ali | grep backup | head -5 || echo "No backups"
+          echo ""
+          echo "Disk Usage:"
+          docker system df
           
     - name: Rollback on failure
       if: failure()
@@ -385,82 +325,51 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_PRIVATE_KEY }}
-        envs: BACKUP_PREFIX
         script: |
-          echo "=== ROLLBACK: Deployment failed, restoring previous version ==="
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          BACKUP_DIR="$HOME/deployments/backups"
+          echo "=== ROLLBACK: Deployment failed ==="
           
-          # Find the most recent backup (exclude first_deployment markers)
-          LATEST_BACKUP=$(find ${BACKUP_DIR}/${BACKUP_PREFIX}_* -type d -exec test -f {}/index.html \; -print 2>/dev/null | sort -r | head -1)
+          # Find most recent backup
+          LATEST_BACKUP=$(docker images | grep portfolio-ali | grep backup | head -1 | awk '{print $1":"$2}')
           
           if [ -z "$LATEST_BACKUP" ]; then
-            echo "⚠️  No valid backup found to rollback to"
-            echo "ℹ️  This might be your first deployment or all backups are invalid"
+            echo "⚠️  No backup found to rollback to"
+            echo "Checking if previous container is still available..."
             
-            # Check if there are any backups at all
-            if ls ${BACKUP_DIR}/${BACKUP_PREFIX}_* 1> /dev/null 2>&1; then
-              echo "📋 Available backup directories (may be empty):"
-              ls -lt ${BACKUP_DIR}/${BACKUP_PREFIX}_* 2>/dev/null | head -5
+            if docker ps -a | grep -q portfolio-ali; then
+              echo "Restarting previous container..."
+              docker start portfolio-ali || true
             fi
-            
-            echo ""
-            echo "🔍 Checking current site status..."
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
-            if [ "$RESPONSE" = "200" ]; then
-              echo "✅ Current site is still accessible (HTTP $RESPONSE)"
-              echo "ℹ️  Your previous deployment is still running"
-              exit 0
-            else
-              echo "❌ Current site is not accessible (HTTP $RESPONSE)"
-              echo "⚠️  Manual intervention may be required"
-              exit 1
-            fi
+            exit 1
           fi
           
           echo "📦 Rolling back to: $LATEST_BACKUP"
           
-          # Show backup info
-          if [ -f "${LATEST_BACKUP}/commit.txt" ]; then
-            echo "Backup commit: $(cat ${LATEST_BACKUP}/commit.txt)"
-          fi
-          if [ -f "${LATEST_BACKUP}/timestamp.txt" ]; then
-            echo "Backup date: $(cat ${LATEST_BACKUP}/timestamp.txt)"
-          fi
+          # Stop failed container
+          docker stop portfolio-ali 2>/dev/null || true
+          docker rm portfolio-ali 2>/dev/null || true
           
-          # Remove failed deployment (use sudo because www-data owns it)
-          echo "🗑️  Removing failed deployment..."
-          sudo rm -rf "${APP_PATH}/dist"
-          
-          # Restore backup
-          echo "📦 Restoring backup..."
-          cp -r "${LATEST_BACKUP}" "${APP_PATH}/dist"
-          
-          # Set permissions
-          echo "🔒 Setting permissions..."
-          sudo chown -R www-data:www-data "${APP_PATH}/dist"
-          sudo chmod -R 755 "${APP_PATH}/dist"
-          
-          # Reload Apache
-          echo "🔄 Reloading Apache..."
-          sudo systemctl reload apache2
-          
-          echo "✅ Rollback completed successfully"
+          # Start backup container
+          docker run -d \
+            --name portfolio-ali \
+            --restart unless-stopped \
+            -p 80:80 \
+            -e NODE_ENV=production \
+            $LATEST_BACKUP
           
           # Verify rollback
-          sleep 2
+          sleep 3
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
           if [ "$RESPONSE" = "200" ]; then
-            echo "✅ Site is accessible after rollback (HTTP $RESPONSE)"
+            echo "✅ Rollback successful (HTTP $RESPONSE)"
           else
-            echo "❌ WARNING: Site returned HTTP $RESPONSE after rollback"
+            echo "❌ Rollback verification failed (HTTP $RESPONSE)"
           fi
           
     - name: Notify deployment status
       if: always()
       run: |
         if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ Deployment completed successfully"
+          echo "✅ Docker deployment completed successfully"
         else
-          echo "❌ Deployment failed"
+          echo "❌ Docker deployment failed"
         fi

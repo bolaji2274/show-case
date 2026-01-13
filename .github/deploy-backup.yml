@@ -1,122 +1,375 @@
-name: Deploy to EC2
+name: Docker CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]  # Adjust branch name as needed
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  MAX_BACKUPS: 5
+
 jobs:
-  deploy:
+  # Test and build job
+  test-and-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Node.js
+    - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'  # Match your EC2 Node.js version
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm ci  # Use npm ci for faster, reliable builds
-
-    # Step: Install optimization tools
-    - name: Install optimization tools
-      run: |
-        npm install -g gltf-pipeline
-        npm install -g sharp-cli
-    
-    # Step: Optimize images
-    - name: Optimize images
-      run: |
-        node scripts/optimize-images.js
+      run: npm ci
       
-    - name: Build application
-      run: npm run build
-      # env:
-      #   VITE_APP_EMAILJS_SERVICE_ID: ${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
-      #   VITE_APP_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
-      #   VITE_APP_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
+    - name: Run linting
+      run: npm run lint || echo "Linting skipped"
+      continue-on-error: true
       
-    # Step: Analyze bundle size
-    - name: Analyze bundle size
-      run: |
-        echo "📊 Build Analysis:"
-        echo "=================="
-        du -sh dist
-        echo ""
-        echo "JavaScript bundles:"
-        ls -lh dist/assets/js/ || ls -lh dist/assets/*.js
-        echo ""
-        echo "Total assets:"
-        find dist -type f -exec ls -lh {} \; | awk '{sum+=$5} END {print "Total size:", sum/1024/1024, "MB"}'
-          
-    - name: Diagnose permissions
-      uses: appleboy/ssh-action@v1.0.3
+    - name: Run tests
+      run: npm test || echo "Tests skipped"
+      continue-on-error: true
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to GitHub Container Registry
+      if: github.event_name == 'push'
+      uses: docker/login-action@v3
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          echo "=== Permission Diagnosis ==="
-          APP_PATH="${{ secrets.EC2_APP_PATH }}"
-          echo "User: $(whoami)"
-          echo "Can write to app path: [$(test -w "$APP_PATH" && echo 'YES' || echo 'NO')]"
-          echo "Can write to dist: [$(test -w "$APP_PATH/dist" && echo 'YES' || echo 'NO')]"
-          echo "Current dist owner: $(ls -ld "$APP_PATH/dist" 2>/dev/null | awk '{print $3}')"
-          echo "Sudo available: [$(which sudo && echo 'YES' || echo 'NO')]"
-          echo "Passwordless sudo: [$(sudo -n true && echo 'YES' || echo 'NO')]"
-          
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@v1.0.3
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_PRIVATE_KEY }}
-        script: |
-          # Navigate to app directory
-          cd ${{ secrets.EC2_APP_PATH }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
           
-          # Create .env file with proper format
-          cat > .env << 'EOF'
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: ${{ github.event_name == 'push' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
           VITE_APP_EMAILJS_SERVICE_ID=${{ secrets.VITE_APP_EMAILJS_SERVICE_ID }}
           VITE_APP_EMAILJS_TEMPLATE_ID=${{ secrets.VITE_APP_EMAILJS_TEMPLATE_ID }}
           VITE_APP_EMAILJS_PUBLIC_KEY=${{ secrets.VITE_APP_EMAILJS_PUBLIC_KEY }}
-          EOF
 
-          # Verify .env file was created
-          echo "Environment file contents:"
-          cat .env
-
-          # Pull latest changes
-          git pull origin main
+  # Deploy to EC2
+  deploy:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Pre-deployment health check
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== Pre-Deployment Health Check ==="
           
-          # Install dependencies (use npm ci for production)
-          npm ci
+          # Check if Docker is installed
+          if ! command -v docker &> /dev/null; then
+            echo "❌ Docker is not installed"
+            exit 1
+          fi
+          echo "✅ Docker is installed: $(docker --version)"
           
-          # Build the application
-          npm run build
+          # Check if Docker Compose is installed
+          if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+            echo "❌ Docker Compose is not installed"
+            exit 1
+          fi
+          echo "✅ Docker Compose is available"
           
-          # # Test Nginx configuration
-          # sudo nginx -t
+          # Check disk space
+          DISK_USAGE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -gt 90 ]; then
+            echo "❌ Disk usage is ${DISK_USAGE}% - too high"
+            exit 1
+          fi
+          echo "✅ Disk usage: ${DISK_USAGE}%"
           
-          # # Reload Nginx to serve new build
-          # sudo systemctl reload nginx
-
-          # Set proper permissions
-          sudo chown -R www-data:www-data dist/
-          sudo chmod -R 755 dist/
+          # Check if container is running
+          if docker ps | grep -q portfolio-ali; then
+            echo "✅ Current container is running"
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+            echo "Current site HTTP response: $RESPONSE"
+          else
+            echo "ℹ️  No container currently running (first deployment)"
+          fi
           
-          # Test Apache configuration
-          sudo apache2ctl configtest
+    - name: Deploy with Docker
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          set -e
           
-          # Reload Apache to serve new build
-          sudo systemctl reload apache2
+          echo "=== Docker Deployment Process ==="
           
-          echo "Deployment completed successfully!"
-          echo "Node.js version: $(node -v)"
-          echo "Build directory contents:"
-          ls -la dist/
+          # Create deployment directory
+          DEPLOY_DIR="$HOME/portfolio-deployment"
+          BACKUP_DIR="$HOME/portfolio-backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
+          mkdir -p "$DEPLOY_DIR"
+          mkdir -p "$BACKUP_DIR"
+          
+          cd "$DEPLOY_DIR"
+          
+          # Backup current container if exists
+          if docker ps -a | grep -q portfolio-ali; then
+            echo "📦 Creating backup of current deployment..."
+            docker commit portfolio-ali portfolio-ali:backup-${TIMESTAMP} || true
+            echo "✅ Backup created: portfolio-ali:backup-${TIMESTAMP}"
+            
+            # Clean old backups (keep last 5)
+            BACKUP_COUNT=$(docker images | grep portfolio-ali | grep backup | wc -l)
+            if [ "$BACKUP_COUNT" -gt 5 ]; then
+              docker images | grep portfolio-ali | grep backup | tail -n +6 | awk '{print $3}' | xargs -r docker rmi || true
+            fi
+          fi
+          
+          # Login to GitHub Container Registry
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # Pull latest image
+          echo "📥 Pulling latest Docker image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Stop and remove old container
+          echo "🛑 Stopping old container..."
+          docker stop portfolio-ali 2>/dev/null || true
+          docker rm portfolio-ali 2>/dev/null || true
+          
+          # Run new container
+          echo "🚀 Starting new container..."
+          docker run -d \
+            --name portfolio-ali \
+            --restart unless-stopped \
+            -p 8080:80 \
+            -e NODE_ENV=production \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # Wait for container to be healthy
+          echo "⏳ Waiting for container to be healthy..."
+          RETRY_COUNT=0
+          MAX_RETRIES=30
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if docker inspect --format='{{.State.Health.Status}}' portfolio-ali 2>/dev/null | grep -q "healthy"; then
+              echo "✅ Container is healthy"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Container failed to become healthy"
+              docker logs portfolio-ali --tail 50
+              exit 1
+            fi
+            
+            echo "Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+            sleep 2
+          done
+          
+          # Clean up unused images
+          echo "🗑️  Cleaning up unused Docker images..."
+          docker image prune -f
+          
+          echo "✅ Deployment completed successfully"
+          
+    - name: Post-deployment smoke tests
+      uses: appleboy/ssh-action@v1.0.3
+      if: success()
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          set -e
+          
+          echo "=== Post-Deployment Smoke Tests ==="
+          FAILED_TESTS=0
+          
+          # Test 1: Container running
+          echo "Test 1: Checking container status..."
+          if docker ps | grep -q portfolio-ali; then
+            echo "✅ Container is running"
+          else
+            echo "❌ Container is not running"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 2: Container health
+          echo "Test 2: Checking container health..."
+          HEALTH=$(docker inspect --format='{{.State.Health.Status}}' portfolio-ali 2>/dev/null || echo "unknown")
+          if [ "$HEALTH" = "healthy" ]; then
+            echo "✅ Container is healthy"
+          else
+            echo "❌ Container health: $HEALTH"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 3: HTTP response
+          echo "Test 3: Checking HTTP response..."
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost --max-time 5)
+            if [ "$RESPONSE" = "200" ]; then
+              echo "✅ HTTP response: $RESPONSE"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️  HTTP response: $RESPONSE - Retrying ($RETRY_COUNT/$MAX_RETRIES)..."
+                sleep 2
+              else
+                echo "❌ HTTP response: $RESPONSE after $MAX_RETRIES retries"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+            fi
+          done
+          
+          # Test 4: Content verification
+          echo "Test 4: Checking page content..."
+          CONTENT=$(curl -s http://localhost --max-time 5)
+          if echo "$CONTENT" | grep -q "<!DOCTYPE html>\|<!doctype html>"; then
+            echo "✅ Valid HTML content found"
+          else
+            echo "❌ Invalid or empty HTML content"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          
+          # Test 5: Response time
+          echo "Test 5: Checking response time..."
+          RESPONSE_TIME=$(curl -s -o /dev/null -w "%{time_total}" http://localhost --max-time 5)
+          echo "ℹ️  Response time: ${RESPONSE_TIME}s"
+          
+          # Test 6: Container logs
+          echo "Test 6: Checking for errors in logs..."
+          if docker logs portfolio-ali --tail 20 | grep -iE "error|fatal|panic"; then
+            echo "⚠️  Errors found in container logs"
+          else
+            echo "✅ No critical errors in logs"
+          fi
+          
+          # Summary
+          echo ""
+          echo "=== Test Summary ==="
+          if [ $FAILED_TESTS -eq 0 ]; then
+            echo "✅ All smoke tests passed!"
+          else
+            echo "❌ $FAILED_TESTS test(s) failed"
+            exit 1
+          fi
+          
+    - name: Deployment summary
+      if: always()
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== Deployment Summary ==="
+          echo "Timestamp: $(date)"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo ""
+          echo "Container Status:"
+          docker ps | grep portfolio-ali || echo "Container not running"
+          echo ""
+          echo "Container Stats:"
+          docker stats --no-stream portfolio-ali 2>/dev/null || echo "Stats unavailable"
+          echo ""
+          echo "Available Backups:"
+          docker images | grep portfolio-ali | grep backup | head -5 || echo "No backups"
+          echo ""
+          echo "Disk Usage:"
+          docker system df
+          
+    - name: Rollback on failure
+      if: failure()
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_PRIVATE_KEY }}
+        script: |
+          echo "=== ROLLBACK: Deployment failed ==="
+          
+          # Find most recent backup
+          LATEST_BACKUP=$(docker images | grep portfolio-ali | grep backup | head -1 | awk '{print $1":"$2}')
+          
+          if [ -z "$LATEST_BACKUP" ]; then
+            echo "⚠️  No backup found to rollback to"
+            echo "Checking if previous container is still available..."
+            
+            if docker ps -a | grep -q portfolio-ali; then
+              echo "Restarting previous container..."
+              docker start portfolio-ali || true
+            fi
+            exit 1
+          fi
+          
+          echo "📦 Rolling back to: $LATEST_BACKUP"
+          
+          # Stop failed container
+          docker stop portfolio-ali 2>/dev/null || true
+          docker rm portfolio-ali 2>/dev/null || true
+          
+          # Start backup container
+          docker run -d \
+            --name portfolio-ali \
+            --restart unless-stopped \
+            -p 80:80 \
+            -e NODE_ENV=production \
+            $LATEST_BACKUP
+          
+          # Verify rollback
+          sleep 3
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost)
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Rollback successful (HTTP $RESPONSE)"
+          else
+            echo "❌ Rollback verification failed (HTTP $RESPONSE)"
+          fi
+          
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Docker deployment completed successfully"
+        else
+          echo "❌ Docker deployment failed"
+        fi

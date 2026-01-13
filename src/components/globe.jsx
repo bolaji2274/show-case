@@ -3,7 +3,6 @@
 import createGlobe from "cobe";
 import { useMotionValue, useSpring } from "motion/react";
 import { useEffect, useRef } from "react";
-
 import { twMerge } from "tailwind-merge";
 
 const MOVEMENT_DAMPING = 1400;
@@ -37,8 +36,8 @@ const GLOBE_CONFIG = {
 };
 
 export function Globe({ className, config = GLOBE_CONFIG }) {
-  let phi = 0;
-  let width = 0;
+  // FIX: Use useRef for phi instead of let
+  const phiRef = useRef(0); 
   const canvasRef = useRef(null);
   const pointerInteracting = useRef(null);
   const pointerInteractionMovement = useRef(0);
@@ -49,6 +48,7 @@ export function Globe({ className, config = GLOBE_CONFIG }) {
     damping: 30,
     stiffness: 100,
   });
+  
 
   const updatePointerInteraction = (value) => {
     pointerInteracting.current = value;
@@ -66,6 +66,7 @@ export function Globe({ className, config = GLOBE_CONFIG }) {
   };
 
   useEffect(() => {
+    let width = 0;
     const onResize = () => {
       if (canvasRef.current) {
         width = canvasRef.current.offsetWidth;
@@ -80,14 +81,20 @@ export function Globe({ className, config = GLOBE_CONFIG }) {
       width: width * 2,
       height: width * 2,
       onRender: (state) => {
-        if (!pointerInteracting.current) phi += 0.005;
-        state.phi = phi + rs.get();
+        // Update the value inside the ref
+        if (!pointerInteracting.current) {
+          phiRef.current += 0.005; 
+        }
+        state.phi = phiRef.current + rs.get();
         state.width = width * 2;
         state.height = width * 2;
       },
     });
 
-    setTimeout(() => (canvasRef.current.style.opacity = "1"), 0);
+    setTimeout(() => {
+      if(canvasRef.current) canvasRef.current.style.opacity = "1";
+    }, 0);
+
     return () => {
       globe.destroy();
       window.removeEventListener("resize", onResize);
@@ -103,7 +110,7 @@ export function Globe({ className, config = GLOBE_CONFIG }) {
     >
       <canvas
         className={twMerge(
-          "size-[30rem] opacity-0 transition-opacity duration-500 [contain:layout_paint_size]"
+          "size-full opacity-0 transition-opacity duration-500 [contain:layout_paint_size]"
         )}
         ref={canvasRef}
         onPointerDown={(e) => {

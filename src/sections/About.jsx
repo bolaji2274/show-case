@@ -41,7 +41,7 @@ const About = () => {
           
          <div className="relative z-10 p-4 md:p-6 bg-gradient-to-r from-black/50 via-black/60 to-transparent md:bg-none md:bg-black/20 backdrop-blur-sm md:backdrop-blur-none rounded-lg md:rounded-none">
             {/* <p className="headtext text-white drop-shadow-lg">Hi, I'm Bolaji Hammed</p> */}
-            <p className="subtext text-gray-100 md:text-gray-200 drop-shadow-md leading-relaxed">
+            <p className="subtext text-gray-100 md:text-white-400 drop-shadow-md leading-relaxed">
               My career in technology started with a deep dive into the world of Linux Systems. As a System Administrator, I learned the critical importance of high availability and the manual pain of traditional server management. This experience became my "why" for transitioning into DevOps Engineering.
 
 I specialize in transforming manual workflows into fully automated CI/CD pipelines. By combining Infrastructure as Code (Terraform) with container orchestration (Docker & Kubernetes), I help organizations achieve 70% faster deployment cycles while maintaining 99.9% uptime.

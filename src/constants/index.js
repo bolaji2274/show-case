@@ -220,19 +220,19 @@ export const mySocials = [
   {
     name: "WhatsApp",
     href: "https://wa.me/2349155113797?text=Hi%20Bolaji%2C%20I%20found%20your%20profile%20and%20I%27m%20interested%20in%20discussing%20a%20potential%20project.",
-    icon: "/images/socials/whatsApp.webp",
+    icon: "/images/socials/whatsapp_logo.webp",
     target: "_blank"
   },
   {
     name: "LinkedIn",
     href: "https://www.linkedin.com/in/bolaji-hammed-aa9010234/",
-    icon: "/images/socials/linkedIn.webp",
+    icon: "/images/socials/linkedln.jpg",
     target: "_blank"
   },
   {
-    name: "Instagram",
-    href: "",
-    icon: "/images/socials/instagram.webp",
+    name: "Email",
+    href: "mailto:hammedbolajihammed@gmail.com?subject=Project Inquiry - Bolaji Hammed Portfolio", // Replace with your actual email
+    icon: "/images/socials/email_logo.webp",
     target: "_blank"
   },
   {
@@ -241,12 +241,7 @@ export const mySocials = [
     icon: "/images/socials/github.webp",
     target: "_blank"
   },
-  {
-    name: "Twitter",
-    href: "",
-    icon: "/images/socials/twitter.webp",
-    target: "_blank"
-  },
+  
 ];
 
 export const experiences = [

@@ -40,11 +40,13 @@ const About = () => {
           />
           
          <div className="relative z-10 p-4 md:p-6 bg-gradient-to-r from-black/50 via-black/60 to-transparent md:bg-none md:bg-black/20 backdrop-blur-sm md:backdrop-blur-none rounded-lg md:rounded-none">
-            <p className="headtext text-white drop-shadow-lg">Hi, I'm Bolaji Hammed</p>
-            <p className="subtext text-gray-100 md:text-gray-300 drop-shadow-md leading-relaxed">
-              A passionate DevOps Engineer & Full-Stack Developer with 4+ years of experience 
-              architecting scalable solutions. I bridge the gap between development and operations, 
-              turning complex infrastructure challenges into automated, reliable systems.
+            {/* <p className="headtext text-white drop-shadow-lg">Hi, I'm Bolaji Hammed</p> */}
+            <p className="subtext text-gray-100 md:text-gray-200 drop-shadow-md leading-relaxed">
+              My career in technology started with a deep dive into the world of Linux Systems. As a System Administrator, I learned the critical importance of high availability and the manual pain of traditional server management. This experience became my "why" for transitioning into DevOps Engineering.
+
+I specialize in transforming manual workflows into fully automated CI/CD pipelines. By combining Infrastructure as Code (Terraform) with container orchestration (Docker & Kubernetes), I help organizations achieve 70% faster deployment cycles while maintaining 99.9% uptime.
+
+Beyond the cloud, I am a Full-Stack Engineer who builds with the MERN stack and Python. Whether I'm developing an AI-driven Sentiment Analysis tool or a livestock management system, my goal is always the same: to build software that is as reliable as the infrastructure it runs on.
             </p>
             <div className="flex gap-2 mt-3">
               <span className="px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">

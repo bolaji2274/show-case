@@ -2,6 +2,7 @@ import { useState } from "react";
 import emailjs from "@emailjs/browser";
 import Alert from "../components/Alert";
 import { Particles } from "../components/Particles";
+import ReactGA from "react-ga4"; // Step 1: Import ReactGA
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -31,26 +32,48 @@ const Contact = () => {
     e.preventDefault();
     setIsLoading(true);
 
+    // Track that the user at least clicked the button
+    ReactGA.event({
+      category: "Contact",
+      action: "Attempted Form Submission",
+    });
+
     try {
-      console.log("Form submitted:", formData);
       await emailjs.send(
         import.meta.env.VITE_APP_EMAILJS_SERVICE_ID,
         import.meta.env.VITE_APP_EMAILJS_TEMPLATE_ID,
         {
           from_name: formData.name,
-          to_name: "Bolaji", // Updated to your name
+          to_name: "Bolaji",
           from_email: formData.email,
-          to_email: "hammedbolajihammed@gmail.com", // Replace with your actual email
+          to_email: "hammedbolajihammed@gmail.com",
           message: formData.message,
         },
         import.meta.env.VITE_APP_EMAILJS_PUBLIC_KEY
       );
+
       setIsLoading(false);
+      
+      // Step 2: Track Successful Conversion
+      ReactGA.event({
+        category: "Contact",
+        action: "Form Submission Success",
+        label: "Contact Form",
+      });
+
       setFormData({ name: "", email: "", message: "" });
       showAlertMessage("success", "Your message has been sent successfully!");
     } catch (error) {
       setIsLoading(false);
       console.log(error);
+
+      // Step 3: Track Failure (useful for debugging)
+      ReactGA.event({
+        category: "Contact",
+        action: "Form Submission Failure",
+        label: error?.text || "Unknown Error",
+      });
+
       showAlertMessage("danger", "Something went wrong! Please try again.");
     }
   };
@@ -76,7 +99,7 @@ const Contact = () => {
         </div>
         <form className="w-full" onSubmit={handleSubmit}>
           <div className="mb-5">
-            <label htmlFor="name" className="feild-label">
+            <label htmlFor="name" className="field-label">
               Full Name
             </label>
             <input
@@ -92,7 +115,7 @@ const Contact = () => {
             />
           </div>
           <div className="mb-5">
-            <label htmlFor="email" className="feild-label">
+            <label htmlFor="email" className="field-label">
               Email Address
             </label>
             <input
@@ -108,13 +131,12 @@ const Contact = () => {
             />
           </div>
           <div className="mb-5">
-            <label htmlFor="message" className="feild-label">
+            <label htmlFor="message" className="field-label">
               Project Details
             </label>
             <textarea
               id="message"
               name="message"
-              type="text"
               rows="4"
               className="field-input field-input-focus"
               placeholder="Tell me about your infrastructure needs, automation goals, or development project..."
@@ -133,7 +155,6 @@ const Contact = () => {
           </button>
         </form>
         
-        {/* Additional Contact Info */}
         <div className="w-full mt-8 pt-6 border-t border-white/10">
           <div className="text-center text-neutral-400 text-sm">
             <p className="mb-2">Prefer direct contact?</p>

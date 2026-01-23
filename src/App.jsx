@@ -1,12 +1,9 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
+import ReactGA from "react-ga4"; // Import GA
 
 import Spinner from "./components/Spinner"
 
 import Navbar from "./sections/Navbar";
-// import Hero from "./sections/Hero";
-// import About from "./sections/About";
-// import Projects from "./sections/Projects";
-// import Experiences from "./sections/Experiences";
 import Testimonial from "./sections/Testimonial";
 import Contact from "./sections/Contact";
 import Footer from './sections/Footer';
@@ -17,26 +14,36 @@ const About = React.lazy(() => import('./sections/About'));
 const Projects = React.lazy(() => import('./sections/Projects'));
 const Experiences = React.lazy(() => import('./sections/Experiences'));
 
+// Initialize Google Analytics with your Measurement ID
+// Replace "G-XXXXXXXXXX" with your actual ID from Google Analytics
+ReactGA.initialize("G-45YBEJXX5M");
+
 const App = () => {
+  
+  useEffect(() => {
+    // Send a pageview signal when the app loads
+    ReactGA.send({ hitType: "pageview", page: window.location.pathname });
+  }, []);
+
   return (
     <div className="container mx-auto max-w-7xl">
       <Navbar />
-      {/* <Hero /> */}
+      
       <Suspense fallback={<Spinner />}>
-      <Hero />
-    </Suspense>
-      {/* <About /> */}
+        <Hero />
+      </Suspense>
+      
       <Suspense fallback={<Spinner />}>
-      <About />
-    </Suspense>
-      {/* <Projects /> */}
+        <About />
+      </Suspense>
+      
       <Suspense fallback={<Spinner />}>
-      <Projects />
-    </Suspense>
-      {/* <Experiences /> */}
+        <Projects />
+      </Suspense>
+      
       <Suspense fallback={<Spinner />}>
-      <Experiences />
-    </Suspense>
+        <Experiences />
+      </Suspense>
 
       <Testimonial />
       <Contact />

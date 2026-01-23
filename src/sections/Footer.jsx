@@ -4,6 +4,8 @@ import PrivacyPolicyModal from "../components/PrivacyPolicyModal";
 
 const Footer = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Get current year automatically
+  const currentYear = new Date().getFullYear();
 
   return (
     <section className="flex flex-col items-center justify-between gap-5 pb-8 text-sm text-neutral-400 c-space md:flex-row relative">
@@ -46,7 +48,7 @@ const Footer = () => {
 
       {/* Copyright & Analytics Note */}
       <div className="flex flex-col items-end gap-1 relative z-10 text-right">
-        <p>© 2025 Bolaji. All rights reserved.</p>
+        <p>© {currentYear} Bolaji. All rights reserved.</p>
         <p className="text-xs text-neutral-600">Analytics by Google</p>
       </div>
 

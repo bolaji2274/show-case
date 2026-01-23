@@ -1,28 +1,34 @@
 import React, { Suspense, useEffect } from "react";
-import ReactGA from "react-ga4"; // Import GA
+import ReactGA from "react-ga4";
 
 import Spinner from "./components/Spinner"
-
 import Navbar from "./sections/Navbar";
 import Testimonial from "./sections/Testimonial";
 import Contact from "./sections/Contact";
 import Footer from './sections/Footer';
 
-// Use React.lazy for components you want to load asynchronously
+// Lazy loaded components
 const Hero = React.lazy(() => import('./sections/Hero'));
 const About = React.lazy(() => import('./sections/About'));
 const Projects = React.lazy(() => import('./sections/Projects'));
 const Experiences = React.lazy(() => import('./sections/Experiences'));
 
-// Initialize Google Analytics with your Measurement ID
-// Replace "G-XXXXXXXXXX" with your actual ID from Google Analytics
-ReactGA.initialize("G-45YBEJXX5M");
+// Fetch the ID from environment variables
+const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_ID;
+
+// Initialize GA only if the ID exists
+if (GA_MEASUREMENT_ID) {
+  ReactGA.initialize(GA_MEASUREMENT_ID);
+}
 
 const App = () => {
-  
   useEffect(() => {
-    // Send a pageview signal when the app loads
-    ReactGA.send({ hitType: "pageview", page: window.location.pathname });
+    if (GA_MEASUREMENT_ID) {
+      // Send pageview signal
+      ReactGA.send({ hitType: "pageview", page: window.location.pathname });
+    } else {
+      console.warn("Google Analytics ID is missing. Check your .env file or build-args.");
+    }
   }, []);
 
   return (

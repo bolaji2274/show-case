@@ -232,13 +232,13 @@ export const mySocials = [
   {
     name: "Email",
     href: "mailto:hammedbolajihammed@gmail.com?subject=Project Inquiry - Bolaji Hammed Portfolio", // Replace with your actual email
-    icon: "/images/socials/email_logo.webp",
+    icon: "/images/socials/gmail_logo.webp",
     target: "_blank"
   },
   {
     name: "GitHub",
     href: "https://github.com/bolaji2274",
-    icon: "/images/socials/github.webp",
+    icon: "/images/socials/github_logo.svg",
     target: "_blank"
   },
   

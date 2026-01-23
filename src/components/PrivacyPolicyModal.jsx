@@ -20,7 +20,7 @@ const PrivacyPolicyModal = ({ isOpen, onClose }) => {
         {/* Content */}
         <div className="prose prose-invert max-w-none">
           <h2 className="text-2xl font-bold mb-4 text-white">Privacy Policy</h2>
-          <p className="text-sm text-neutral-400 mb-4">Last updated: January 2025</p>
+          <p className="text-sm text-neutral-400 mb-4">Last updated: January 2026</p>
           
           <h3 className="text-lg font-semibold text-white mt-4">1. Introduction</h3>
           <p className="text-neutral-300 text-sm">

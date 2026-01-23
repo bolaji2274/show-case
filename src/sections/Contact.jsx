@@ -2,7 +2,7 @@ import { useState } from "react";
 import emailjs from "@emailjs/browser";
 import Alert from "../components/Alert";
 import { Particles } from "../components/Particles";
-import ReactGA from "react-ga4"; // Step 1: Import ReactGA
+import ReactGA from "react-ga4";
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -23,16 +23,17 @@ const Contact = () => {
     setAlertType(type);
     setAlertMessage(message);
     setShowAlert(true);
+    
+    // Increased timeout to 7 seconds so they can actually read the "Thank You"
     setTimeout(() => {
       setShowAlert(false);
-    }, 5000);
+    }, 7000);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Track that the user at least clicked the button
     ReactGA.event({
       category: "Contact",
       action: "Attempted Form Submission",
@@ -54,27 +55,33 @@ const Contact = () => {
 
       setIsLoading(false);
       
-      // Step 2: Track Successful Conversion
+      // Conversion Tracking
       ReactGA.event({
         category: "Contact",
         action: "Form Submission Success",
         label: "Contact Form",
       });
 
+      // Clear the form
       setFormData({ name: "", email: "", message: "" });
-      showAlertMessage("success", "Your message has been sent successfully!");
+
+      // Personalized Thank You Message
+      showAlertMessage(
+        "success", 
+        `Thank you, ${formData.name.split(' ')[0]}! Your message is on its way to my inbox. I'll get back to you shortly.`
+      );
+
     } catch (error) {
       setIsLoading(false);
-      console.log(error);
+      console.error("EmailJS Error:", error);
 
-      // Step 3: Track Failure (useful for debugging)
       ReactGA.event({
         category: "Contact",
         action: "Form Submission Failure",
         label: error?.text || "Unknown Error",
       });
 
-      showAlertMessage("danger", "Something went wrong! Please try again.");
+      showAlertMessage("danger", "I couldn't receive your message. Please try reaching out via WhatsApp or LinkedIn!");
     }
   };
 
@@ -87,71 +94,68 @@ const Contact = () => {
         color={"#ffffff"}
         refresh
       />
+      
+      {/* Alert Component triggers here */}
       {showAlert && <Alert type={alertType} text={alertMessage} />}
+      
       <div className="flex flex-col items-center justify-center max-w-md p-5 mx-auto border border-white/10 rounded-2xl bg-primary">
         <div className="flex flex-col items-start w-full gap-5 mb-10">
           <h2 className="text-heading">Let's Build Together</h2>
           <p className="font-normal text-neutral-400">
             Whether you're looking to scale your infrastructure, automate your deployment pipelines, 
             build robust backend systems, or bring innovative DevOps solutions to life, I'm here to help. 
-            Let's discuss how we can optimize your technology stack and accelerate your business growth.
           </p>
         </div>
+        
         <form className="w-full" onSubmit={handleSubmit}>
           <div className="mb-5">
-            <label htmlFor="name" className="field-label">
-              Full Name
-            </label>
+            <label htmlFor="name" className="field-label">Full Name</label>
             <input
               id="name"
               name="name"
               type="text"
               className="field-input field-input-focus"
               placeholder="Bolaji Hammed"
-              autoComplete="name"
               value={formData.name}
               onChange={handleChange}
               required
             />
           </div>
+          
           <div className="mb-5">
-            <label htmlFor="email" className="field-label">
-              Email Address
-            </label>
+            <label htmlFor="email" className="field-label">Email Address</label>
             <input
               id="email"
               name="email"
               type="email"
               className="field-input field-input-focus"
               placeholder="bolaji.hammed@company.com"
-              autoComplete="email"
               value={formData.email}
               onChange={handleChange}
               required
             />
           </div>
+          
           <div className="mb-5">
-            <label htmlFor="message" className="field-label">
-              Project Details
-            </label>
+            <label htmlFor="message" className="field-label">Project Details</label>
             <textarea
               id="message"
               name="message"
               rows="4"
               className="field-input field-input-focus"
-              placeholder="Tell me about your infrastructure needs, automation goals, or development project..."
-              autoComplete="message"
+              placeholder="Tell me about your infrastructure needs..."
               value={formData.message}
               onChange={handleChange}
               required
             />
           </div>
+          
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full px-1 py-3 text-lg text-center rounded-md cursor-pointer bg-radial from-lavender to-royal hover-animation disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-1 py-3 text-lg text-center rounded-md cursor-pointer bg-radial from-lavender to-royal hover-animation disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold"
           >
-            {!isLoading ? "Send Message" : "Sending..."}
+            {!isLoading ? "Send Message" : "Sending Message..."}
           </button>
         </form>
         
@@ -161,7 +165,6 @@ const Contact = () => {
             <div className="flex flex-col gap-1">
               <p>📧 Available for DevOps consulting</p>
               <p>⚡ Quick response within 24 hours</p>
-              <p>🚀 Let's accelerate your deployment!</p>
             </div>
           </div>
         </div>
